@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../logic/date_utils.dart' as date_utils;
 import '../models/calendar_event.dart';
 import '../theme/app_theme.dart';
+import '../widgets/liquid_glass.dart';
 
 /// Core-fields port of components/EventSheet.tsx + EventOptions.tsx +
 /// EventDetailFields.tsx: title, location, all-day, start/end date+time,
@@ -622,148 +623,174 @@ class _EventSheetState extends State<EventSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
+    const blue = Color(0xFF3B82F6);
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.close, color: theme.text, size: 28),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Text(
-                      '일정',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: theme.text,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (widget.isEditing && widget.onDelete != null)
-                    IconButton(
-                      icon: Icon(
-                        Icons.delete_outline,
-                        color: CupertinoColors.destructiveRed,
-                        size: 26,
-                      ),
-                      onPressed: _confirmDelete,
-                    ),
-                  IconButton(
-                    icon: Icon(Icons.check, color: theme.text, size: 28),
-                    onPressed: _save,
-                  ),
-                ],
+      child: LiquidGlass(
+        // This sheet presents pickers and alerts, so keep the glass effect in
+        // Flutter instead of embedding the native platform view underneath it.
+        useNative: false,
+        radius: 20,
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.surface.withValues(alpha: 0.72),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: Theme.of(context).colorScheme
+                  .copyWith(primary: blue, secondary: blue),
+              textSelectionTheme: const TextSelectionThemeData(
+                cursorColor: blue,
+                selectionColor: Color(0x663B82F6),
+                selectionHandleColor: blue,
               ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: _pickColor,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: colorFromHex(_color),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: TextField(
-                      controller: _titleController,
-                      autofocus: !widget.isEditing,
-                      style: TextStyle(color: theme.text, fontSize: 20),
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        hintText: '일정을 입력하세요.',
-                        hintStyle: TextStyle(color: theme.textMuted),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(height: 28),
-              _iconRow(
-                icon: Icons.access_time_rounded,
-                label: '종일',
-                trailing: Switch(
-                  value: _isAllDay,
-                  onChanged: (value) => setState(() => _isAllDay = value),
-                ),
-              ),
-              _dateTimeSection(theme),
-              _rowDivider(),
-              _iconRow(
-                icon: Icons.repeat,
-                label: '반복',
-                onTap: _pickRepeat,
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+            ),
+            child: CupertinoTheme(
+              data: CupertinoTheme.of(context).copyWith(primaryColor: blue),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (_frequency != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: Text(
-                          _frequencyLabel(_frequency!),
-                          style: TextStyle(color: theme.textSecondary),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.close, color: theme.text, size: 28),
+                          onPressed: () => Navigator.pop(context),
                         ),
+                        Expanded(
+                          child: Text(
+                            '일정',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: theme.text,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        if (widget.isEditing && widget.onDelete != null)
+                          IconButton(
+                            icon: Icon(
+                              Icons.delete_outline,
+                              color: CupertinoColors.destructiveRed,
+                              size: 26,
+                            ),
+                            onPressed: _confirmDelete,
+                          ),
+                        IconButton(
+                          icon: Icon(Icons.check, color: theme.text, size: 28),
+                          onPressed: _save,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: _pickColor,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: colorFromHex(_color),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: TextField(
+                            controller: _titleController,
+                            autofocus: !widget.isEditing,
+                            style: TextStyle(color: theme.text, fontSize: 20),
+                            decoration: InputDecoration(
+                              border: InputBorder.none,
+                              hintText: '일정을 입력하세요.',
+                              hintStyle: TextStyle(color: theme.textMuted),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 28),
+                    _iconRow(
+                      icon: Icons.access_time_rounded,
+                      label: '종일',
+                      trailing: Switch(
+                        value: _isAllDay,
+                        onChanged: (value) => setState(() => _isAllDay = value),
                       ),
-                    Icon(Icons.chevron_right, color: theme.textMuted),
+                    ),
+                    _dateTimeSection(theme),
+                    _rowDivider(),
+                    _iconRow(
+                      icon: Icons.repeat,
+                      label: '반복',
+                      onTap: _pickRepeat,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_frequency != null)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Text(
+                                _frequencyLabel(_frequency!),
+                                style: TextStyle(color: theme.textSecondary),
+                              ),
+                            ),
+                          Icon(Icons.chevron_right, color: theme.textMuted),
+                        ],
+                      ),
+                    ),
+                    _rowDivider(),
+                    _iconFieldRow(
+                      icon: Icons.location_on_outlined,
+                      controller: _locationController,
+                      hint: '장소',
+                    ),
+                    _rowDivider(),
+                    _iconFieldRow(
+                      icon: Icons.notes,
+                      controller: _descriptionController,
+                      hint: '설명',
+                      minLines: 2,
+                      maxLines: 4,
+                    ),
+                    _rowDivider(),
+                    _iconFieldRow(
+                      icon: Icons.link,
+                      controller: _urlController,
+                      hint: 'URL',
+                      keyboardType: TextInputType.url,
+                    ),
+                    _rowDivider(),
+                    _iconRow(
+                      icon: Icons.palette_outlined,
+                      label: '색상',
+                      onTap: _pickColor,
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        color: theme.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _save,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        backgroundColor: blue,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('저장'),
+                    ),
                   ],
                 ),
               ),
-              _rowDivider(),
-              _iconFieldRow(
-                icon: Icons.location_on_outlined,
-                controller: _locationController,
-                hint: '장소',
-              ),
-              _rowDivider(),
-              _iconFieldRow(
-                icon: Icons.notes,
-                controller: _descriptionController,
-                hint: '설명',
-                minLines: 2,
-                maxLines: 4,
-              ),
-              _rowDivider(),
-              _iconFieldRow(
-                icon: Icons.link,
-                controller: _urlController,
-                hint: 'URL',
-                keyboardType: TextInputType.url,
-              ),
-              _rowDivider(),
-              _iconRow(
-                icon: Icons.palette_outlined,
-                label: '색상',
-                onTap: _pickColor,
-                trailing: Icon(Icons.chevron_right, color: theme.textMuted),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _save,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                child: const Text('저장'),
-              ),
-            ],
+            ),
           ),
         ),
       ),
