@@ -7,27 +7,12 @@ import '../widgets/liquid_glass.dart';
 class SettingsScreen extends StatelessWidget {
   final AppTheme theme;
   final String accountLabel;
-  final bool showHolidays, showLunar, showSolarTerms, showAnniversaries;
-  final ValueChanged<bool> onHolidaysChanged,
-      onLunarChanged,
-      onSolarTermsChanged,
-      onAnniversariesChanged;
-  final VoidCallback onManageCalendars;
   final VoidCallback? onLiveActivities;
 
   const SettingsScreen({
     super.key,
     required this.theme,
     required this.accountLabel,
-    required this.showHolidays,
-    required this.showLunar,
-    required this.showSolarTerms,
-    required this.showAnniversaries,
-    required this.onHolidaysChanged,
-    required this.onLunarChanged,
-    required this.onSolarTermsChanged,
-    required this.onAnniversariesChanged,
-    required this.onManageCalendars,
     this.onLiveActivities,
   });
 
@@ -56,31 +41,6 @@ class SettingsScreen extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 14),
-        LiquidGlass(
-          useNative: false,
-          radius: 18,
-          child: _card(context, [
-            _header('캘린더'),
-            ListTile(
-              leading: const Icon(CupertinoIcons.calendar_badge_plus),
-              title: const Text('캘린더 연동'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: onManageCalendars,
-            ),
-          ]),
-        ),
-        const SizedBox(height: 14),
-        LiquidGlass(
-          useNative: false,
-          radius: 18,
-          child: _card(context, [
-            _header('기능 표시'),
-            _toggle('공휴일', showHolidays, onHolidaysChanged),
-            _toggle('음력', showLunar, onLunarChanged),
-            _toggle('절기', showSolarTerms, onSolarTermsChanged),
-            _toggle('기념일', showAnniversaries, onAnniversariesChanged),
-          ]),
-        ),
         if (onLiveActivities != null) ...[
           const SizedBox(height: 14),
           LiquidGlass(
@@ -97,9 +57,66 @@ class SettingsScreen extends StatelessWidget {
             ]),
           ),
         ],
+        const SizedBox(height: 14),
+        LiquidGlass(
+          useNative: false,
+          radius: 18,
+          child: _card(context, [
+            _header('법률 정보 및 이용 약관'),
+            ListTile(
+              leading: const Icon(CupertinoIcons.doc_text),
+              title: const Text('이용약관'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _showInfo(
+                context,
+                '이용약관',
+                '캘린더 서비스 이용에 관한 약관입니다. 서비스 이용 전 내용을 확인해 주세요.',
+              ),
+            ),
+            ListTile(
+              leading: const Icon(CupertinoIcons.lock_shield),
+              title: const Text('개인정보 처리방침'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _showInfo(
+                context,
+                '개인정보 처리방침',
+                '서비스 제공에 필요한 정보만 처리하며, 개인정보 보호 관련 내용을 안내합니다.',
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 14),
+        LiquidGlass(
+          useNative: false,
+          radius: 18,
+          child: _card(context, [
+            _header('프로그램 정보'),
+            const ListTile(
+              leading: Icon(CupertinoIcons.calendar),
+              title: Text('캘린더'),
+              subtitle: Text('버전 1.0.0'),
+            ),
+          ]),
+        ),
       ],
     ),
   );
+
+  void _showInfo(BuildContext context, String title, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _card(BuildContext context, List<Widget> children) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -116,11 +133,4 @@ class SettingsScreen extends StatelessWidget {
       ),
     ),
   );
-  Widget _toggle(String label, bool value, ValueChanged<bool> onChanged) =>
-      SwitchListTile(
-        title: Text(label),
-        value: value,
-        onChanged: onChanged,
-        activeThumbColor: CupertinoColors.activeBlue,
-      );
 }

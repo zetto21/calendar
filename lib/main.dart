@@ -989,7 +989,6 @@ class _CalendarHomeState extends State<CalendarHome>
         ),
         importedCount: imported.sources.length,
         onManageCalendars: _showCalendarConnections,
-        onLiveActivities: LiveActivity.isIOS ? _showLiveActivities : null,
         onSettings: () {
           _scaffoldKey.currentState?.closeDrawer();
           Navigator.of(context).push(
@@ -997,31 +996,6 @@ class _CalendarHomeState extends State<CalendarHome>
               builder: (_) => SettingsScreen(
                 theme: theme,
                 accountLabel: widget.user?.email ?? '게스트',
-                showHolidays: _showHolidays,
-                showLunar: _showLunar,
-                showSolarTerms: _showSolarTerms,
-                showAnniversaries: _showAnniversaries,
-                onHolidaysChanged: (v) => _setDisplaySetting(
-                  DisplaySetting.holidays,
-                  v,
-                  () => _showHolidays = v,
-                ),
-                onLunarChanged: (v) => _setDisplaySetting(
-                  DisplaySetting.lunar,
-                  v,
-                  () => _showLunar = v,
-                ),
-                onSolarTermsChanged: (v) => _setDisplaySetting(
-                  DisplaySetting.solarTerms,
-                  v,
-                  () => _showSolarTerms = v,
-                ),
-                onAnniversariesChanged: (v) => _setDisplaySetting(
-                  DisplaySetting.anniversaries,
-                  v,
-                  () => _showAnniversaries = v,
-                ),
-                onManageCalendars: _showCalendarConnections,
                 onLiveActivities: LiveActivity.isIOS
                     ? _showLiveActivities
                     : null,
@@ -1308,7 +1282,6 @@ class _AccountDrawer extends StatelessWidget {
   final VoidCallback onLogout;
   final int importedCount;
   final VoidCallback onManageCalendars;
-  final VoidCallback? onLiveActivities;
   final VoidCallback onSettings;
   const _AccountDrawer({
     required this.theme,
@@ -1324,7 +1297,6 @@ class _AccountDrawer extends StatelessWidget {
     required this.onLogout,
     required this.importedCount,
     required this.onManageCalendars,
-    this.onLiveActivities,
     required this.onSettings,
   });
 
@@ -1377,7 +1349,7 @@ class _AccountDrawer extends StatelessWidget {
                   const SizedBox(width: 8),
                   IconButton(
                     tooltip: '캘린더 관리',
-                    onPressed: onSettings,
+                    onPressed: onManageCalendars,
                     icon: Icon(
                       Icons.calendar_month_outlined,
                       color: CupertinoColors.activeBlue.resolveFrom(context),
@@ -1385,7 +1357,7 @@ class _AccountDrawer extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: '설정',
-                    onPressed: () {},
+                    onPressed: onSettings,
                     icon: Icon(
                       Icons.settings_outlined,
                       color: theme.textSecondary,
@@ -1410,15 +1382,6 @@ class _AccountDrawer extends StatelessWidget {
                 subscription: true,
               ),
               const SizedBox(height: 28),
-              if (onLiveActivities != null) ...[
-                _sectionTitle('설정'),
-                _calendarConnect(
-                  'Live Activity 요청 보내기',
-                  CupertinoIcons.bolt_fill,
-                  onLiveActivities!,
-                ),
-                const SizedBox(height: 20),
-              ],
               _sectionTitle('기능 표시'),
               const SizedBox(height: 10),
               _displayCheckbox(
