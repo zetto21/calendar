@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -122,6 +124,9 @@ class _AuthGateState extends State<AuthGate> {
     final generation = ++_authGeneration;
     setState(() => _loading = true);
     final imports = context.read<ImportedEvents>();
+    final events = context.read<EventStore>();
+    await events.selectAccount(user?.id);
+    await events.sync();
     await AccountPreferences.instance.selectAccount(user?.id);
     await AccountPreferences.instance.sync();
     await DisplaySettings.instance.load();
@@ -214,13 +219,23 @@ class _CalendarHomeState extends State<CalendarHome>
   Map<String, List<String>> _apiAnniversaries = const {};
   int? _apiHolidaysYear;
   late SystemEventsSync _sync;
+  late EventStore _eventStore;
+  Timer? _eventSyncTimer;
   VoidCallback _collapseAgenda = () {};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _sync = SystemEventsSync(context.read<EventStore>());
+    _eventStore = context.read<EventStore>();
+    _sync = SystemEventsSync(_eventStore);
+    _eventStore.syncSucceeded.addListener(_showEventSyncStatus);
+    _eventSyncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        unawaited(_eventStore.sync());
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showEventSyncStatus());
     AccountPreferences.instance.syncSucceeded.addListener(
       _showSettingsSyncStatus,
     );
@@ -232,6 +247,17 @@ class _CalendarHomeState extends State<CalendarHome>
       (_) => _loadHolidays(_anchorDate.year),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshImported());
+  }
+
+  void _showEventSyncStatus() {
+    if (!mounted ||
+        widget.user == null ||
+        _eventStore.syncSucceeded.value != false) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('일정은 이 기기에 저장됐습니다. 서버 연결 후 다른 기기에 동기화됩니다.')),
+    );
   }
 
   void _showSettingsSyncStatus() {
@@ -340,7 +366,7 @@ class _CalendarHomeState extends State<CalendarHome>
         if (matches.isEmpty) return;
         await LiveActivity.start(matches.first);
       }
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -350,11 +376,13 @@ class _CalendarHomeState extends State<CalendarHome>
             ),
           ),
         );
+      }
     } on PlatformException catch (error) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error.message ?? '실시간 활동을 처리하지 못했습니다.')),
         );
+      }
     }
   }
 
@@ -408,6 +436,8 @@ class _CalendarHomeState extends State<CalendarHome>
 
   @override
   void dispose() {
+    _eventSyncTimer?.cancel();
+    _eventStore.syncSucceeded.removeListener(_showEventSyncStatus);
     AccountPreferences.instance.syncSucceeded.removeListener(
       _showSettingsSyncStatus,
     );
@@ -435,6 +465,8 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _runSync() async {
+    await _eventStore.sync();
+    if (!mounted) return;
     final (from, to) = _range;
     await _sync.sync(
       date_utils.parseDateKey(from),
@@ -490,10 +522,12 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _connectCalendar(String provider) async {
+    final importedEvents = context.read<ImportedEvents>();
     try {
       if (provider == 'apple' || provider == 'naver') {
-        if (!await EventKit.requestAccess())
+        if (!await EventKit.requestAccess()) {
           throw AuthException('Apple 캘린더 접근을 허용해 주세요.');
+        }
         final deviceCalendars = await EventKit.fetchCalendars();
         final selectedCalendars = await _pickDeviceCalendars(deviceCalendars);
         if (selectedCalendars == null || selectedCalendars.isEmpty) return;
@@ -515,7 +549,8 @@ class _CalendarHomeState extends State<CalendarHome>
             ),
           );
         }
-        context.read<ImportedEvents>().replaceProvider(provider, imported);
+        if (!mounted) return;
+        importedEvents.replaceProvider(provider, imported);
         if (mounted && provider == 'naver') {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -531,8 +566,9 @@ class _CalendarHomeState extends State<CalendarHome>
         callbackUrlScheme: 'calendar',
       );
       final callback = Uri.parse(result);
-      if (callback.queryParameters['result'] != 'success')
+      if (callback.queryParameters['result'] != 'success') {
         throw AuthException(callback.queryParameters['error'] ?? '연결하지 못했습니다.');
+      }
       if (!mounted) return;
       final calendars = await AuthService.instance.importCalendars(provider);
       if (!mounted) return;
@@ -790,8 +826,6 @@ class _CalendarHomeState extends State<CalendarHome>
     }
     _refreshImported();
   }
-
-  bool _creatingEvent = false;
 
   Future<void> _openCreate(DateTime date, [String? time]) async {
     await _openSheet(draft: null, date: date, time: time);
@@ -1142,7 +1176,7 @@ class _ImportSelectionSheet extends StatelessWidget {
             : ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: children.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
+                separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (_, index) => children[index],
               ),
       ),

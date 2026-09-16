@@ -269,6 +269,24 @@ class AuthService {
     return result.user;
   }
 
+  Future<List<Map<String, dynamic>>> syncEvents(
+    String userId,
+    List<Map<String, dynamic>> changes,
+  ) async {
+    final token = await _storage.read(key: _tokenKey);
+    if (token == null) throw AuthException('로그인이 필요합니다.');
+    return _request(
+      '/api/events/sync?user=${Uri.encodeQueryComponent(userId)}',
+      (json) => (json!['items'] as List)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList(),
+      method: 'POST',
+      body: {'changes': changes},
+      token: token,
+      timeout: const Duration(seconds: 5),
+    );
+  }
+
   Future<Map<String, dynamic>> loadSettings(String userId) async {
     final token = await _storage.read(key: _tokenKey);
     if (token == null) throw AuthException('로그인이 필요합니다.');

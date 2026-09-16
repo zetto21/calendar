@@ -171,6 +171,7 @@ class EventKit {
       url: map['url'] as String?,
       startsAt: map['startsAt'] as String?,
       endsAt: map['endsAt'] as String?,
+      updatedAt: map['updatedAt'] as String?,
       time: isAllDay
           ? null
           : map['time'] as String? ??

@@ -33,7 +33,17 @@ class SystemEventsSync {
           updated.add(event);
           continue;
         }
-        final fieldsChanged = match.title != event.title ||
+        final nativeModified = DateTime.tryParse(match.updatedAt ?? '');
+        final localModified = DateTime.tryParse(event.updatedAt ?? '');
+        // An older Apple Calendar copy must not undo a newer cloud edit.
+        if (localModified != null &&
+            (nativeModified == null ||
+                !nativeModified.isAfter(localModified))) {
+          updated.add(event);
+          continue;
+        }
+        final fieldsChanged =
+            match.title != event.title ||
             match.location != event.location ||
             match.description != event.description ||
             match.url != event.url ||
@@ -54,6 +64,8 @@ class SystemEventsSync {
           time: match.time,
           clearTime: match.time == null,
           duration: match.duration,
+          startsAt: match.startsAt,
+          endsAt: match.endsAt,
         );
         if (merged.date != event.date) {
           next.putIfAbsent(merged.date, () => []).add(merged);

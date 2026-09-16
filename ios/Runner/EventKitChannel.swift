@@ -145,6 +145,7 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
       "time": local.string(from: event.startDate),
       "startsAt": isoFormatter.string(from: event.startDate),
       "endsAt": isoFormatter.string(from: event.endDate),
+      "updatedAt": isoFormatter.string(from: event.lastModifiedDate ?? event.creationDate ?? .distantPast),
       "durationMinutes": Int(event.endDate.timeIntervalSince(event.startDate) / 60),
     ]
   }

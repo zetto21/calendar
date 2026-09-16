@@ -42,13 +42,14 @@ struct CalendarLiveActivityWidget: Widget {
       .activitySystemActionForegroundColor(.primary)
     } dynamicIsland: { context in
       DynamicIsland {
-        DynamicIslandExpandedRegion(.leading) {
-          Label(context.isStale ? "일정 종료" : "진행 중", systemImage: "calendar.badge.clock")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(context.isStale ? .green : .blue)
-        }
         DynamicIslandExpandedRegion(.bottom) {
           VStack(alignment: .leading, spacing: 8) {
+            // Keep the status below the camera cutout, in the full-width region.
+            Label(context.isStale ? "일정 종료" : "진행 중", systemImage: "calendar.badge.clock")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(context.isStale ? .green : .blue)
+              .lineLimit(1)
+              .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .firstTextBaseline) {
               Text(context.state.title)
                 .font(.headline.weight(.semibold))
@@ -65,9 +66,26 @@ struct CalendarLiveActivityWidget: Widget {
             Label(context.isStale ? "일정이 종료되었습니다" : timeRange(context), systemImage: "clock")
               .font(.caption)
               .foregroundStyle(.secondary)
+            Group {
+              if context.isStale {
+                ProgressView(value: 1.0)
+              } else {
+                ProgressView(
+                  timerInterval: context.state.start...context.state.end,
+                  countsDown: false,
+                  label: { EmptyView() },
+                  currentValueLabel: { EmptyView() }
+                )
+              }
+            }
+            .progressViewStyle(.linear)
+            .tint(context.isStale ? .green : .blue)
+            .accessibilityLabel("일정 경과 시간")
+            .padding(.top, 4)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
           .fixedSize(horizontal: false, vertical: true)
+          .padding(.horizontal, 4)
           .padding(.top, 4)
           .padding(.bottom, 8)
         }
