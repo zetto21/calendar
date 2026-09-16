@@ -29,8 +29,9 @@ List<LiveCalendarEvent> currentLiveEvents(
   final expanded = expandEvents(events, previous, today, zone);
   final current = <LiveCalendarEvent>[];
   for (final event in expanded.values.expand((items) => items)) {
-    if (event.isAllDay || event.title.trim().isEmpty || event.duration <= 0)
+    if (event.isAllDay || event.title.trim().isEmpty || event.duration <= 0) {
       continue;
+    }
     try {
       final start = event.startsAt != null
           ? DateTime.parse(event.startsAt!)

@@ -494,7 +494,7 @@ class _EventSheetState extends State<EventSheet> {
               style: TextStyle(color: theme.text, fontSize: 15),
             ),
           ),
-          if (trailing != null) trailing,
+          ...?(trailing == null ? null : [trailing]),
         ],
       ),
     );

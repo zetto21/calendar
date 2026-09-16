@@ -109,7 +109,7 @@ class EventKit {
       final raw = await _channel.invokeMethod<List<dynamic>>('fetchEvents', {
         'start': start.toUtc().toIso8601String(),
         'end': end.toUtc().toIso8601String(),
-        if (calendarIds != null) 'calendarIds': calendarIds,
+        ...?(calendarIds == null ? null : {'calendarIds': calendarIds}),
       });
       if (raw == null) return [];
       return raw
