@@ -68,11 +68,22 @@ final class LiveActivityChannel {
             result(FlutterError(code: "background", message: "앱을 연 상태에서 시작해 주세요.", details: nil)); return
           }
           let created = try Activity.request(attributes: CalendarActivityAttributes(eventID: eventID), content: content, pushType: nil)
+          // A manually started calendar activity is useful only if the person
+          // can immediately find it. Ask ActivityKit to present its standard
+          // alert while the system decides the Dynamic Island presentation.
+          await created.update(
+            content,
+            alertConfiguration: AlertConfiguration(
+              title: "현재 일정",
+              body: "일정이 진행 중입니다.",
+              sound: .default
+            )
+          )
           for activity in activities where activity.id != created.id {
             await activity.end(nil, dismissalPolicy: .immediate)
           }
         }
-        result(nil)
+        result(["eventID": eventID])
       } catch {
         result(FlutterError(code: "activity_failed", message: "실시간 활동을 시작하지 못했습니다. 설정과 기기 상태를 확인해 주세요.", details: nil))
       }

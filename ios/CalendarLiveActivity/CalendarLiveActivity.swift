@@ -1,17 +1,6 @@
 import ActivityKit
-import AppIntents
 import SwiftUI
 import WidgetKit
-
-struct EndCalendarActivity: LiveActivityIntent {
-  static var title: LocalizedStringResource = "실시간 활동 종료"
-  func perform() async throws -> some IntentResult {
-    for activity in Activity<CalendarActivityAttributes>.activities {
-      await activity.end(nil, dismissalPolicy: .immediate)
-    }
-    return .result()
-  }
-}
 
 @main
 struct CalendarLiveActivityBundle: WidgetBundle {
@@ -21,27 +10,31 @@ struct CalendarLiveActivityBundle: WidgetBundle {
 struct CalendarLiveActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: CalendarActivityAttributes.self) { context in
-      HStack(spacing: 14) {
-        Image(systemName: "calendar.badge.clock")
-          .font(.title2).foregroundStyle(.blue)
+      HStack(alignment: .top, spacing: 14) {
+        Image(systemName: context.isStale ? "checkmark.circle.fill" : "calendar.badge.clock")
+          .font(.title2)
+          .foregroundStyle(context.isStale ? .green : .blue)
           .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: 5) {
-          Text(context.isStale ? "일정 종료" : "진행 중인 일정")
-            .font(.caption).foregroundStyle(.secondary)
-          Text(context.state.title).font(.headline).lineLimit(2)
-          HStack(spacing: 4) {
-            Text(context.state.start, style: .time)
-            Text("–")
-            Text(context.state.end, style: .time)
-          }.font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 7) {
+          Text(context.state.title)
+            .font(.headline.weight(.semibold))
+            .lineLimit(1)
+          Label {
+            Text(context.isStale ? "일정이 종료되었습니다" : "진행 중 · \(timeRange(context))")
+          } icon: {
+            Image(systemName: "clock")
+          }
+          .font(.caption)
+          .foregroundStyle(.secondary)
         }
-        Spacer(minLength: 4)
+        Spacer(minLength: 8)
         VStack(alignment: .trailing, spacing: 5) {
-          countdown(context).font(.title3.bold()).monospacedDigit()
-          Text(context.isStale ? "완료" : "종료까지").font(.caption2).foregroundStyle(.secondary)
-          Button(intent: EndCalendarActivity()) {
-            Image(systemName: "xmark.circle.fill").font(.title3)
-          }.buttonStyle(.plain).accessibilityLabel("실시간 활동 종료")
+          Text(context.isStale ? "완료" : "남은 시간")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+          countdown(context)
+            .font(.title2.bold())
+            .monospacedDigit()
         }
       }
       .padding(16)
@@ -50,23 +43,33 @@ struct CalendarLiveActivityWidget: Widget {
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          Label("일상 캘린더", systemImage: "calendar.badge.clock")
-            .font(.caption).foregroundStyle(.blue)
-        }
-        DynamicIslandExpandedRegion(.trailing) {
-          Button(intent: EndCalendarActivity()) {
-            Image(systemName: "xmark.circle.fill")
-          }.buttonStyle(.plain).accessibilityLabel("실시간 활동 종료")
+          Label(context.isStale ? "일정 종료" : "진행 중", systemImage: "calendar.badge.clock")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(context.isStale ? .green : .blue)
         }
         DynamicIslandExpandedRegion(.bottom) {
-          HStack {
-            VStack(alignment: .leading, spacing: 4) {
-              Text(context.state.title).font(.headline).lineLimit(2)
-              Text(context.isStale ? "일정 종료" : "진행 중").font(.caption).foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+              Text(context.state.title)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+              Spacer(minLength: 12)
+              countdown(context)
+                .font(.title2.bold())
+                .monospacedDigit()
+                .foregroundStyle(.blue)
+                .frame(width: 100, alignment: .trailing)
             }
-            Spacer()
-            countdown(context).font(.title2.bold()).monospacedDigit()
-          }.padding(.bottom, 8)
+            Label(context.isStale ? "일정이 종료되었습니다" : timeRange(context), systemImage: "clock")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.top, 4)
+          .padding(.bottom, 8)
         }
       } compactLeading: {
         Image(systemName: "calendar").foregroundStyle(.blue)
@@ -86,8 +89,14 @@ struct CalendarLiveActivityWidget: Widget {
       Text("종료")
     } else {
       Text(timerInterval: context.state.start...context.state.end, countsDown: true)
-        .contentTransition(.numericText(countsDown: true))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .multilineTextAlignment(.trailing)
         .accessibilityLabel("종료까지 남은 시간")
     }
+  }
+
+  private func timeRange(_ context: ActivityViewContext<CalendarActivityAttributes>) -> String {
+    "\(context.state.start.formatted(date: .omitted, time: .shortened)) – \(context.state.end.formatted(date: .omitted, time: .shortened))"
   }
 }

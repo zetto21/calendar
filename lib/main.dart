@@ -291,6 +291,15 @@ class _CalendarHomeState extends State<CalendarHome>
         return;
       }
       final events = _currentLiveEvents();
+      if (events.length == 1) {
+        await LiveActivity.start(events.single);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('잠금 화면에 실시간 활동을 표시합니다.')),
+          );
+        }
+        return;
+      }
       final selected = await showCupertinoModalPopup<String>(
         context: context,
         builder: (context) => CupertinoActionSheet(
@@ -1326,10 +1335,10 @@ class _AccountDrawer extends StatelessWidget {
               ),
               const SizedBox(height: 28),
               if (onLiveActivities != null) ...[
-                _sectionTitle('실시간 활동'),
+                _sectionTitle('설정'),
                 _calendarConnect(
-                  '현재 일정 · 남은 시간',
-                  CupertinoIcons.timer,
+                  'Live Activity 요청 보내기',
+                  CupertinoIcons.bolt_fill,
                   onLiveActivities!,
                 ),
                 const SizedBox(height: 20),

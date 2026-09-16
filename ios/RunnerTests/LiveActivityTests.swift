@@ -18,6 +18,12 @@ final class LiveActivityTests: XCTestCase {
       content: ActivityContent(state: initial, staleDate: end), pushType: nil)
     XCTAssertEqual(activity.attributes.eventID, id)
     XCTAssertEqual(activity.activityState, .active)
+    // Used only for an on-demand simulator preview. Normal CI runs do not
+    // provide this variable and remain fast.
+    if let seconds = ProcessInfo.processInfo.environment["LIVE_ACTIVITY_PREVIEW_SECONDS"],
+       let duration = TimeInterval(seconds), duration > 0 {
+      try await Task.sleep(for: .seconds(duration))
+    }
     let changed = CalendarActivityAttributes.ContentState(title: "변경된 일정", start: start, end: end.addingTimeInterval(60))
     await activity.update(ActivityContent(state: changed, staleDate: changed.end))
     XCTAssertEqual(activity.content.state.title, "변경된 일정")
