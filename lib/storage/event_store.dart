@@ -227,6 +227,27 @@ class EventStore extends ChangeNotifier {
     unawaited(sync());
   }
 
+  Map<String, dynamic> exportBackup() => {
+    'events': _events.values
+        .expand((items) => items)
+        .map((event) => event.toJson())
+        .toList(),
+  };
+
+  Future<void> restoreBackup(List<dynamic> rawEvents) => _serial(() async {
+    final restored = <String, List<CalendarEvent>>{};
+    final pending = <String, Map<String, dynamic>>{};
+    for (final raw in rawEvents) {
+      final event = CalendarEvent.fromJson(Map<String, dynamic>.from(raw as Map));
+      _put(restored, event);
+      if (_user != null) pending[event.id] = _change(event);
+    }
+    _events = restored;
+    _pending = pending;
+    await _persist();
+    notifyListeners();
+  });
+
   Future<bool> sync() {
     if (_syncing != null) return _syncing!;
     final operation = _serial(() async {

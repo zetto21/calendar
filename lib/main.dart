@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:provider/provider.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'logic/date_utils.dart' as date_utils;
 import 'logic/event_dedup.dart';
@@ -23,6 +25,8 @@ import 'screens/signup_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/time_grid_view.dart';
 import 'services/auth_service.dart';
+import 'services/app_update_service.dart';
+import 'services/backup_service.dart';
 import 'storage/event_store.dart';
 import 'storage/display_settings.dart';
 import 'storage/account_preferences.dart';
@@ -234,6 +238,7 @@ class _CalendarHomeState extends State<CalendarHome>
     _eventSyncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
         unawaited(_eventStore.sync());
+        unawaited(_refreshLiveActivity());
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _showEventSyncStatus());
@@ -248,6 +253,41 @@ class _CalendarHomeState extends State<CalendarHome>
       (_) => _loadHolidays(_anchorDate.year),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshImported());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshLiveActivity());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForAppUpdate());
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    final update = await AppUpdateService.check();
+    if (!mounted || update == null) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('업데이트가 필요합니다'),
+        content: Text('새 버전 ${update.version}이 출시되었습니다. 최신 버전으로 업데이트해 주세요.'),
+        actions: [
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('나중에'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            textStyle: const TextStyle(color: CupertinoColors.systemBlue),
+            onPressed: () async {
+              final url = update.updateUrl;
+              if (url == null) return;
+              final uri = Uri.tryParse(url);
+              if (uri != null) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: const Text('업데이트'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showEventSyncStatus() {
@@ -300,6 +340,15 @@ class _CalendarHomeState extends State<CalendarHome>
     DateTime.now(),
   );
 
+  List<LiveCalendarEvent> _liveActivityCandidates() => liveActivityCandidates(
+    _combineEvents(
+      context.read<EventStore>().events,
+      context.read<ImportedEvents>().events,
+    ),
+    widget.deviceZone,
+    DateTime.now(),
+  );
+
   Future<void> _showLiveActivities() async {
     _scaffoldKey.currentState?.closeDrawer();
     try {
@@ -344,7 +393,7 @@ class _CalendarHomeState extends State<CalendarHome>
                   '${event.event.title} · ${event.end.difference(DateTime.now()).inMinutes.clamp(0, 99999)}분 남음',
                 ),
               ),
-            if (status.eventID != null)
+            if (status.eventIDs.isNotEmpty)
               CupertinoActionSheetAction(
                 isDestructiveAction: true,
                 onPressed: () => Navigator.pop(context, '__end__'),
@@ -391,17 +440,61 @@ class _CalendarHomeState extends State<CalendarHome>
     if (!mounted || !LiveActivity.isIOS) return;
     try {
       final status = await LiveActivity.status();
-      if (!mounted || status.eventID == null) return;
-      final matches = _currentLiveEvents().where(
-        (event) => event.id == status.eventID,
-      );
-      if (matches.isEmpty) {
-        await LiveActivity.end();
-      } else {
-        await LiveActivity.update(matches.first);
+      if (!mounted) return;
+      final candidates = _liveActivityCandidates();
+      final activeIDs = status.eventIDs.toSet();
+      for (final event in candidates) {
+        if (activeIDs.contains(event.id)) {
+          await LiveActivity.update(event);
+        } else {
+          await LiveActivity.start(event);
+        }
       }
     } on PlatformException {
       /* Retry after the next foreground update. */
+    }
+  }
+
+  Future<List<String>> _backupData(ValueChanged<double> onProgress) =>
+      BackupService.exportData(
+        context.read<EventStore>(),
+        onProgress: onProgress,
+      );
+
+  Future<void> _restoreData() async {
+    try {
+      final restored = await BackupService.restoreData(
+        context.read<EventStore>(),
+      );
+      if (!restored || !mounted) return;
+      await DisplaySettings.instance.load();
+      setState(() {
+        _showHolidays = DisplaySettings.instance.enabled(
+          DisplaySetting.holidays,
+        );
+        _showLunar = DisplaySettings.instance.enabled(DisplaySetting.lunar);
+        _showSolarTerms = DisplaySettings.instance.enabled(
+          DisplaySetting.solarTerms,
+        );
+        _showAnniversaries = DisplaySettings.instance.enabled(
+          DisplaySetting.anniversaries,
+        );
+      });
+      await _refreshLiveActivity();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('백업 데이터를 복원했습니다.')));
+      }
+    } on FormatException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('백업 파일을 복원하지 못했습니다.')));
+      }
     }
   }
 
@@ -895,31 +988,51 @@ class _CalendarHomeState extends State<CalendarHome>
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     final store = context.read<EventStore>();
-    await showModalBottomSheet<void>(
+    await showGeneralDialog<void>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => EventSheet(
-        theme: Theme.of(context).brightness == Brightness.dark
-            ? darkTheme
-            : lightTheme,
-        draft: draft,
-        isEditing: draft != null,
-        initialDate: date,
-        initialTime: time,
-        onSave: (event) async {
-          await onBeforeSave?.call();
-          final saved = await store.saveEvent(event);
-          if (syncToSystem) await _syncToEventKit(store, saved);
-          await _refreshLiveActivity();
-          if (context.mounted) Navigator.pop(context);
-        },
-        onDelete: onDelete == null
-            ? null
-            : () async {
-                await onDelete();
-                if (context.mounted) Navigator.pop(context);
-              },
+      barrierDismissible: true,
+      barrierLabel: '일정 편집 닫기',
+      barrierColor: Colors.black.withValues(alpha: 0.18),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dialogContext, _, _) => Stack(
+        children: [
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.10)),
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Material(
+              color: Colors.transparent,
+              child: EventSheet(
+                theme: Theme.of(context).brightness == Brightness.dark
+                    ? darkTheme
+                    : lightTheme,
+                draft: draft,
+                isEditing: draft != null,
+                initialDate: date,
+                initialTime: time,
+                onSave: (event) async {
+                  await onBeforeSave?.call();
+                  final saved = await store.saveEvent(event);
+                  if (syncToSystem) await _syncToEventKit(store, saved);
+                  await _refreshLiveActivity();
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                },
+                onDelete: onDelete == null
+                    ? null
+                    : () async {
+                        await onDelete();
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
+                      },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -996,6 +1109,9 @@ class _CalendarHomeState extends State<CalendarHome>
               builder: (_) => SettingsScreen(
                 theme: theme,
                 accountLabel: widget.user?.email ?? '게스트',
+                onLogout: widget.onLogout,
+                onBackup: _backupData,
+                onRestore: _restoreData,
                 onLiveActivities: LiveActivity.isIOS
                     ? _showLiveActivities
                     : null,
@@ -1006,6 +1122,7 @@ class _CalendarHomeState extends State<CalendarHome>
         onLogout: widget.onLogout,
       ),
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             TopBar(
@@ -1054,7 +1171,7 @@ class _CalendarHomeState extends State<CalendarHome>
                         Positioned.fill(child: _buildView(theme, expanded)),
                         Positioned(
                           right: 20,
-                          bottom: 24,
+                          bottom: MediaQuery.viewPaddingOf(context).bottom + 24,
                           child: SizedBox(
                             width: 48,
                             height: 48,

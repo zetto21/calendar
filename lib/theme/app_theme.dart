@@ -7,12 +7,27 @@ class PaletteColor {
 }
 
 const List<PaletteColor> palette = [
+  // 진한 색상
+  PaletteColor('진한 블루', Color(0xFF1D4ED8)),
+  PaletteColor('진한 코랄', Color(0xFFC2410C)),
+  PaletteColor('진한 그린', Color(0xFF15803D)),
+  PaletteColor('진한 옐로우', Color(0xFFB45309)),
+  PaletteColor('진한 퍼플', Color(0xFF6D28D9)),
+  PaletteColor('진한 핑크', Color(0xFFBE185D)),
+  // 기본 색상
   PaletteColor('블루', Color(0xFF3B82F6)),
   PaletteColor('코랄', Color(0xFFF0654F)),
   PaletteColor('그린', Color(0xFF2FA36B)),
   PaletteColor('옐로우', Color(0xFFE8A100)),
   PaletteColor('퍼플', Color(0xFF8B5CF6)),
   PaletteColor('핑크', Color(0xFFEC4899)),
+  // 연한 색상
+  PaletteColor('연한 블루', Color(0xFF93C5FD)),
+  PaletteColor('연한 코랄', Color(0xFFFDBA9A)),
+  PaletteColor('연한 그린', Color(0xFF86EFAC)),
+  PaletteColor('연한 옐로우', Color(0xFFFDE68A)),
+  PaletteColor('연한 퍼플', Color(0xFFC4B5FD)),
+  PaletteColor('연한 핑크', Color(0xFFF9A8D4)),
 ];
 
 class AppTheme {
@@ -49,7 +64,7 @@ const lightTheme = AppTheme(
   textSecondary: Color(0xFF787774),
   textMuted: Color(0xFF9B9A97),
   border: Color(0xFFEDECEA),
-  accent: Color(0xFF209978),
+  accent: Color(0xFF3B82F6),
   danger: Color(0xFFEB5757),
   isDark: false,
 );

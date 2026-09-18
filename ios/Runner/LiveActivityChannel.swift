@@ -31,14 +31,14 @@ final class LiveActivityChannel {
     let activities = Activity<CalendarActivityAttributes>.activities
     switch call.method {
     case "status":
-      for activity in activities where activity.content.state.end <= Date() {
+      for activity in activities where activity.content.state.end.addingTimeInterval(180) <= Date() {
         await activity.end(nil, dismissalPolicy: .immediate)
       }
-      let active = Activity<CalendarActivityAttributes>.activities.first {
+      let active = Activity<CalendarActivityAttributes>.activities.filter {
         $0.activityState == .active && $0.content.state.end > Date()
       }
       result(["supported": true, "enabled": ActivityAuthorizationInfo().areActivitiesEnabled,
-              "eventID": active?.attributes.eventID as Any? ?? NSNull()])
+              "eventIDs": active.map(\.attributes.eventID)])
     case "end":
       for activity in activities { await activity.end(nil, dismissalPolicy: .immediate) }
       result(nil)
@@ -46,17 +46,18 @@ final class LiveActivityChannel {
       guard let args = call.arguments as? [String: Any],
             let eventID = args["eventID"] as? String, !eventID.isEmpty,
             let title = args["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let color = args["color"] as? String,
             let startValue = args["start"] as? NSNumber,
             let endValue = args["end"] as? NSNumber else {
         result(FlutterError(code: "invalid", message: "일정 정보를 확인해 주세요.", details: nil)); return
       }
       let start = Date(timeIntervalSince1970: startValue.doubleValue)
       let end = Date(timeIntervalSince1970: endValue.doubleValue)
-      guard start <= Date(), end > Date(), end > start else {
-        result(FlutterError(code: "not_current", message: "현재 진행 중인 시간 지정 일정만 표시할 수 있습니다.", details: nil)); return
+      guard start.addingTimeInterval(-600) <= Date(), end > Date(), end > start else {
+        result(FlutterError(code: "not_current", message: "현재 진행 중이거나 10분 안에 시작하는 시간 지정 일정만 표시할 수 있습니다.", details: nil)); return
       }
-      let state = CalendarActivityAttributes.ContentState(title: String(title.prefix(120)), start: start, end: end)
-      let content = ActivityContent(state: state, staleDate: end)
+      let state = CalendarActivityAttributes.ContentState(title: String(title.prefix(120)), color: color, start: start, end: end)
+      let content = ActivityContent(state: state, staleDate: end.addingTimeInterval(180))
       do {
         if let existing = activities.first(where: { $0.attributes.eventID == eventID && $0.activityState == .active }) {
           await existing.update(content)
@@ -79,9 +80,6 @@ final class LiveActivityChannel {
               sound: .default
             )
           )
-          for activity in activities where activity.id != created.id {
-            await activity.end(nil, dismissalPolicy: .immediate)
-          }
         }
         result(["eventID": eventID])
       } catch {

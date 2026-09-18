@@ -5,6 +5,7 @@ import Foundation
 struct CalendarActivityAttributes: ActivityAttributes {
   struct ContentState: Codable, Hashable {
     var title: String
+    var color: String
     var start: Date
     var end: Date
   }

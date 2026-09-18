@@ -522,21 +522,15 @@ class _EventSheetState extends State<EventSheet> {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: TextField(
+            child: CupertinoTextField.borderless(
               controller: controller,
               minLines: minLines,
               maxLines: maxLines,
               keyboardType: keyboardType,
               style: TextStyle(color: theme.text, fontSize: 15),
-              decoration: InputDecoration(
-                filled: false,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                hintText: hint,
-                hintStyle: TextStyle(color: theme.textMuted, fontSize: 15),
-              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              placeholder: hint,
+              placeholderStyle: TextStyle(color: theme.textMuted, fontSize: 15),
             ),
           ),
         ],
@@ -657,9 +651,11 @@ class _EventSheetState extends State<EventSheet> {
                   children: [
                     Row(
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.close, color: theme.text, size: 28),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(44, 44),
                           onPressed: () => Navigator.pop(context),
+                          child: Icon(CupertinoIcons.xmark, color: theme.text, size: 26),
                         ),
                         Expanded(
                           child: Text(
@@ -673,17 +669,21 @@ class _EventSheetState extends State<EventSheet> {
                           ),
                         ),
                         if (widget.isEditing && widget.onDelete != null)
-                          IconButton(
-                            icon: Icon(
-                              Icons.delete_outline,
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(44, 44),
+                            onPressed: _confirmDelete,
+                            child: Icon(
+                              CupertinoIcons.trash,
                               color: CupertinoColors.destructiveRed,
                               size: 26,
                             ),
-                            onPressed: _confirmDelete,
                           ),
-                        IconButton(
-                          icon: Icon(Icons.check, color: theme.text, size: 28),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(44, 44),
                           onPressed: _save,
+                          child: Icon(CupertinoIcons.check_mark, color: theme.text, size: 27),
                         ),
                       ],
                     ),
@@ -703,15 +703,13 @@ class _EventSheetState extends State<EventSheet> {
                         ),
                         const SizedBox(width: 14),
                         Expanded(
-                          child: TextField(
+                          child: CupertinoTextField.borderless(
                             controller: _titleController,
                             autofocus: !widget.isEditing,
                             style: TextStyle(color: theme.text, fontSize: 20),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              hintText: '일정을 입력하세요.',
-                              hintStyle: TextStyle(color: theme.textMuted),
-                            ),
+                            placeholder: '일정을 입력하세요.',
+                            placeholderStyle: TextStyle(color: theme.textMuted),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                         ),
                       ],
@@ -720,7 +718,7 @@ class _EventSheetState extends State<EventSheet> {
                     _iconRow(
                       icon: Icons.access_time_rounded,
                       label: '종일',
-                      trailing: Switch(
+                      trailing: CupertinoSwitch(
                         value: _isAllDay,
                         onChanged: (value) => setState(() => _isAllDay = value),
                       ),
@@ -767,25 +765,15 @@ class _EventSheetState extends State<EventSheet> {
                       hint: 'URL',
                       keyboardType: TextInputType.url,
                     ),
-                    _rowDivider(),
-                    _iconRow(
-                      icon: Icons.palette_outlined,
-                      label: '색상',
-                      onTap: _pickColor,
-                      trailing: Icon(
-                        Icons.chevron_right,
-                        color: theme.textMuted,
-                      ),
-                    ),
                     const SizedBox(height: 16),
-                    FilledButton(
+                    CupertinoButton.filled(
                       onPressed: _save,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                        backgroundColor: blue,
-                        foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      borderRadius: BorderRadius.circular(12),
+                      child: const Text(
+                        '저장',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      child: const Text('저장'),
                     ),
                   ],
                 ),

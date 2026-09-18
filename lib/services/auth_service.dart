@@ -94,7 +94,7 @@ class AuthService {
     defaultValue: 'http://localhost:3001',
   );
 
-  String _apiBase() {
+  static String get apiBase {
     var base = _configuredBase;
     if (base.endsWith('/')) base = base.substring(0, base.length - 1);
     // The Android emulator's own loopback isn't the host machine's; 10.0.2.2
@@ -116,7 +116,7 @@ class AuthService {
     String? token,
     Duration timeout = const Duration(seconds: 15),
   }) async {
-    final uri = Uri.parse('${_apiBase()}$path');
+    final uri = Uri.parse('$apiBase$path');
     final headers = {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
@@ -253,7 +253,7 @@ class AuthService {
   });
 
   String socialLoginStartURL(SocialProvider provider) =>
-      '${_apiBase()}/api/auth/oauth/${provider.name}/start';
+      '$apiBase/api/auth/oauth/${provider.name}/start';
 
   Future<AuthUser> exchangeSocialCode(String code) async {
     final result = await _request(

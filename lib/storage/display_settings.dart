@@ -23,4 +23,15 @@ class DisplaySettings {
     _values[setting] = value;
     await AccountPreferences.instance.set(_key(setting), value);
   }
+
+  Map<String, bool> exportBackup() => {
+    for (final setting in DisplaySetting.values) setting.name: enabled(setting),
+  };
+
+  Future<void> restoreBackup(Map<String, dynamic> values) async {
+    for (final setting in DisplaySetting.values) {
+      final value = values[setting.name];
+      if (value is bool) await setEnabled(setting, value);
+    }
+  }
 }

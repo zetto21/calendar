@@ -91,6 +91,9 @@ class _MonthAgendaState extends State<MonthAgenda> {
     ];
     final events = [...anniversaries, ...?widget.events[widget.selectedKey]]
       ..sort((a, b) => (a.time ?? '').compareTo(b.time ?? ''));
+    final holidayName = widget.showHolidays
+        ? widget.holidayNames[widget.selectedKey]
+        : null;
     final rows =
         dates
             .getMonthMatrix(widget.viewDate.year, widget.viewDate.month - 1)
@@ -167,7 +170,9 @@ class _MonthAgendaState extends State<MonthAgenda> {
                       top: Radius.circular(24),
                     ),
                     child: LiquidGlass(
-                      radius: 24,
+                      // The outer clip rounds only the top. Keeping the glass
+                      // square at the bottom removes the black gap below it.
+                      radius: 0,
                       child: Column(
                         children: [
                           GestureDetector(
@@ -217,45 +222,62 @@ class _MonthAgendaState extends State<MonthAgenda> {
                                   child: Row(
                                     children: [
                                       Expanded(
-                                        child: Text(
-                                          '${day.month}. ${day.day}. ${dates.weekdays[day.weekday % 7]}',
-                                          style: TextStyle(
-                                            color: theme.text,
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                        child: Row(
+                                          children: [
+                                            Text(
+                                              '${day.month}. ${day.day}. ${dates.weekdays[day.weekday % 7]}',
+                                              style: TextStyle(
+                                                color: theme.text,
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            if (widget.showLunar &&
+                                                dates.formatLunarDate(day) != null)
+                                              Padding(
+                                                padding: const EdgeInsets.only(left: 8),
+                                                child: Text(
+                                                  dates.formatLunarDate(day)!,
+                                                  style: TextStyle(
+                                                    color: theme.textMuted,
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
                                         ),
                                       ),
-                                      if (widget.showLunar &&
-                                          dates.formatLunarDate(day) != null)
+                                      if (holidayName?.isNotEmpty == true)
                                         Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 8,
-                                          ),
+                                          padding: const EdgeInsets.only(right: 8),
                                           child: Text(
-                                            dates.formatLunarDate(day)!,
+                                            holidayName!,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: theme.textMuted,
+                                              color: theme.danger,
                                               fontSize: 12,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                         ),
-                                      TextButton(
+                                      IconButton(
+                                        tooltip: _timeline ? '목록 보기' : '시간표 보기',
                                         onPressed: () => setState(
                                           () => _timeline = !_timeline,
                                         ),
-                                        style: TextButton.styleFrom(
+                                        style: IconButton.styleFrom(
                                           backgroundColor: theme.bgSecondary,
                                           foregroundColor: theme.textSecondary,
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
+                                            borderRadius: BorderRadius.circular(8),
                                           ),
                                         ),
-                                        child: Text(
-                                          _timeline ? '목록' : '시간표',
-                                          style: const TextStyle(fontSize: 12),
+                                        icon: Icon(
+                                          _timeline
+                                              ? Icons.list_alt_outlined
+                                              : Icons.view_timeline_outlined,
+                                          size: 20,
                                         ),
                                       ),
                                     ],
