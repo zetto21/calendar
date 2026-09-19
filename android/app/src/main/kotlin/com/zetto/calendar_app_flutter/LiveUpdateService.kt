@@ -206,7 +206,7 @@ class LiveUpdateService : Service() {
                     .setProgressSegments(segments)
                     .setProgressStartIcon(Icon.createWithResource(this, R.drawable.ic_status_upcoming).setTint(accentColor))
                     .setProgressEndIcon(Icon.createWithResource(this, R.drawable.ic_status_done).setTint(if (finished) GREEN else Color.GRAY))
-                    .setProgressTrackerIcon(Icon.createWithResource(this, statusIcon).setTint(statusColor)))
+                    .setProgressTrackerIcon(Icon.createWithResource(this, if (finished) R.drawable.ic_status_done else R.drawable.ic_tracker_dot).setTint(statusColor)))
             if (finished) {
                 builder.setShortCriticalText("종료")
             } else {
