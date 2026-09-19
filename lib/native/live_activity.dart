@@ -95,9 +95,17 @@ class LiveActivity {
   static bool get isIOS =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+  static bool get isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  static bool get isSupportedPlatform => isIOS || isAndroid;
+
+  static Future<void> openNotificationSettings() async {
+    if (isAndroid) await _channel.invokeMethod<void>('openSettings');
+  }
+
   static Future<({bool supported, bool enabled, List<String> eventIDs})>
   status() async {
-    if (!isIOS) {
+    if (!isSupportedPlatform) {
       return (supported: false, enabled: false, eventIDs: const <String>[]);
     }
     try {
@@ -119,7 +127,7 @@ class LiveActivity {
   static Future<void> update(LiveCalendarEvent event) =>
       _channel.invokeMethod('update', event.payload);
   static Future<void> end() async {
-    if (isIOS) {
+    if (isSupportedPlatform) {
       try {
         await _channel.invokeMethod<void>('end');
       } on MissingPluginException {

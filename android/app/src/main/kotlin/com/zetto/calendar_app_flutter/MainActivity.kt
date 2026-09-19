@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -21,6 +22,53 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "calendar_app/live_activity")
+            .setMethodCallHandler { call, result ->
+                LiveUpdateService.createChannel(this)
+                val manager = getSystemService(NotificationManager::class.java)
+                when (call.method) {
+                    "status" -> result.success(mapOf(
+                        "supported" to true,
+                        "enabled" to (manager.areNotificationsEnabled() &&
+                            (Build.VERSION.SDK_INT < 26 || manager.getNotificationChannel(LiveUpdateService.CHANNEL).importance != NotificationManager.IMPORTANCE_NONE)),
+                        "eventIDs" to LiveUpdateService.activeIDs(this),
+                    ))
+                    "start", "update" -> {
+                        val id = call.argument<String>("eventID")
+                        val title = call.argument<String>("title")
+                        val start = call.argument<Number>("start")?.toDouble()
+                        val end = call.argument<Number>("end")?.toDouble()
+                        if (id.isNullOrBlank() || title.isNullOrBlank() || start == null || end == null ||
+                            !start.isFinite() || !end.isFinite() || end <= start || end * 1000 <= System.currentTimeMillis()) {
+                            result.error("invalid_event", "진행 중이거나 곧 시작하는 일정을 선택해 주세요.", null)
+                        } else if (!manager.areNotificationsEnabled()) {
+                            requestNotificationPermissionIfNeeded()
+                            result.error("notifications_disabled", "알림 권한을 허용한 후 다시 선택해 주세요.", null)
+                        } else if (call.method == "update" && !LiveUpdateService.activeIDs(this).contains(id)) {
+                            result.success(null)
+                        } else {
+                            try {
+                                val intent = Intent(this, LiveUpdateService::class.java)
+                                    .putExtra("eventID", id).putExtra("title", title)
+                                    .putExtra("color", call.argument<String>("color"))
+                                    .putExtra("start", (start * 1000).toLong()).putExtra("end", (end * 1000).toLong())
+                                if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+                                result.success(null)
+                            } catch (error: RuntimeException) {
+                                result.error("live_update_failed", "앱을 연 상태에서 다시 시작해 주세요.", error.message)
+                            }
+                        }
+                    }
+                    "end" -> { LiveUpdateService.end(this); result.success(null) }
+                    "openSettings" -> {
+                        startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

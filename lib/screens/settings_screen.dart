@@ -295,6 +295,15 @@ class SettingsScreen extends StatelessWidget {
                       onTap: () => _confirmLogout(context),
                     ),
                   ]),
+                  if (onLiveActivities != null)
+                    section('실시간 업데이트', [
+                      tile(
+                        Icons.timelapse,
+                        '일정 실시간 업데이트',
+                        subtitle: '남은 시간과 진행 상태를 잠금 화면에 표시',
+                        onTap: onLiveActivities,
+                      ),
+                    ]),
                   if (onBackup != null || onRestore != null)
                     section('데이터 관리', [
                       if (onBackup != null)

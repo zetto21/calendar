@@ -351,6 +351,10 @@ class _CalendarHomeState extends State<CalendarHome>
 
   Future<void> _showLiveActivities() async {
     _scaffoldKey.currentState?.closeDrawer();
+    if (LiveActivity.isAndroid) {
+      await _showAndroidLiveUpdates();
+      return;
+    }
     try {
       final status = await LiveActivity.status();
       if (!mounted) return;
@@ -436,13 +440,124 @@ class _CalendarHomeState extends State<CalendarHome>
     }
   }
 
+  Future<void> _showAndroidLiveUpdates() async {
+    try {
+      final status = await LiveActivity.status();
+      if (!mounted) return;
+      if (!status.enabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('일정 실시간 업데이트를 사용하려면 알림을 허용해 주세요.'),
+            action: SnackBarAction(
+              label: '알림 설정',
+              onPressed: () {
+                unawaited(LiveActivity.openNotificationSettings());
+              },
+            ),
+          ),
+        );
+        return;
+      }
+      final candidates = _liveActivityCandidates();
+      final selected = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (sheetContext) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.75,
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              children: [
+                Text(
+                  '일정 실시간 업데이트',
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                const Text('선택한 일정의 남은 시간과 진행 상태를 잠금 화면과 알림창에서 확인하세요.'),
+                const SizedBox(height: 16),
+                if (candidates.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text('진행 중이거나 10분 이내에 시작하는 일정이 없습니다.'),
+                  ),
+                for (final event in candidates)
+                  ListTile(
+                    leading: const Icon(Icons.timelapse),
+                    title: Text(event.event.title),
+                    subtitle: Text(
+                      '${TimeOfDay.fromDateTime(event.start.toLocal()).format(sheetContext)} – ${TimeOfDay.fromDateTime(event.end.toLocal()).format(sheetContext)}',
+                    ),
+                    trailing: status.eventIDs.contains(event.id)
+                        ? const Icon(Icons.check_circle)
+                        : const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.pop(sheetContext, event.id),
+                  ),
+                if (status.eventIDs.isNotEmpty) ...[
+                  const Divider(),
+                  TextButton.icon(
+                    onPressed: () => Navigator.pop(sheetContext, '__end__'),
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('실시간 업데이트 종료'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+      if (!mounted || selected == null) return;
+      if (selected == '__end__') {
+        await LiveActivity.end();
+      } else {
+        final matches = _liveActivityCandidates().where(
+          (event) => event.id == selected,
+        );
+        if (matches.isEmpty) return;
+        await LiveActivity.start(matches.first);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              selected == '__end__'
+                  ? '실시간 업데이트를 종료했습니다.'
+                  : '알림창에 일정 실시간 업데이트를 표시합니다.',
+            ),
+          ),
+        );
+      }
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message ?? '실시간 업데이트를 시작하지 못했습니다.')),
+        );
+      }
+    }
+  }
+
   Future<void> _refreshLiveActivity() async {
-    if (!mounted || !LiveActivity.isIOS) return;
+    if (!mounted || !LiveActivity.isSupportedPlatform) return;
     try {
       final status = await LiveActivity.status();
       if (!mounted) return;
       final candidates = _liveActivityCandidates();
       final activeIDs = status.eventIDs.toSet();
+      if (LiveActivity.isAndroid) {
+        // Android tracks only the event explicitly selected by the user.
+        // Stopping or dismissing the notification must not restart it.
+        final selected = candidates.where(
+          (event) => activeIDs.contains(event.id),
+        );
+        if (activeIDs.isNotEmpty && selected.isEmpty) await LiveActivity.end();
+        for (final event in selected) {
+          await LiveActivity.update(event);
+        }
+        return;
+      }
       for (final event in candidates) {
         if (activeIDs.contains(event.id)) {
           await LiveActivity.update(event);
@@ -1128,7 +1243,7 @@ class _CalendarHomeState extends State<CalendarHome>
                 onLogout: widget.onLogout,
                 onBackup: _backupData,
                 onRestore: _restoreData,
-                onLiveActivities: LiveActivity.isIOS
+                onLiveActivities: LiveActivity.isSupportedPlatform
                     ? _showLiveActivities
                     : null,
               ),
