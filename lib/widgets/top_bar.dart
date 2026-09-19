@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/cupertino.dart';
 
 import '../theme/app_theme.dart';
@@ -80,8 +82,7 @@ class _TopBarState extends State<TopBar> {
                   ),
                 ),
               ),
-              LiquidGlass(
-                useNative: false,
+              _controlSurface(
                 radius: 22,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -192,21 +193,34 @@ class _TopBarState extends State<TopBar> {
     );
   }
 
+  bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
+
+  Widget _controlSurface({required double radius, required Widget child}) {
+    if (_isAndroid) return child;
+    // Keep Flutter controls below the drawer, including on iOS.
+    return LiquidGlass(useNative: false, radius: radius, child: child);
+  }
+
+  ButtonStyle? get _iconButtonStyle => _isAndroid
+      ? IconButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        )
+      : null;
+
   Widget _glassIconButton({
     required String tooltip,
     required IconData icon,
     required VoidCallback onPressed,
     required Color color,
   }) {
-    return LiquidGlass(
-      // A native iOS platform view can remain above Scaffold's drawer layer.
-      // Keep top-bar controls in Flutter so the drawer covers them completely.
-      useNative: false,
+    return _controlSurface(
       radius: 20,
       child: SizedBox(
         width: 40,
         height: 40,
         child: IconButton(
+          style: _iconButtonStyle,
           tooltip: tooltip,
           onPressed: onPressed,
           icon: Icon(icon, size: 20, color: color),
@@ -225,6 +239,7 @@ class _TopBarState extends State<TopBar> {
       width: 44,
       height: 44,
       child: IconButton(
+        style: _iconButtonStyle,
         tooltip: tooltip,
         onPressed: onPressed,
         icon: Icon(icon, size: 20, color: color),
