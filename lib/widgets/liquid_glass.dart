@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Native Apple glass on iOS; frosted material on other platforms.
+/// Native Apple glass on iOS; opaque Material surfaces on Android.
 /// The foreground stays in Flutter to retain keyboard and screen reader actions.
 class LiquidGlass extends StatelessWidget {
   final Widget child;
@@ -31,6 +31,14 @@ class LiquidGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return Material(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(radius),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+    }
     final ios = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     if (!ios) return _buildGlass(context, false);
     return StreamBuilder<bool>(

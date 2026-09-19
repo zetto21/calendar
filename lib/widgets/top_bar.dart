@@ -48,7 +48,7 @@ class _TopBarState extends State<TopBar> {
           Row(
             children: [
               SizedBox(
-                width: 88,
+                width: _isAndroid ? 96 : 88,
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: _glassIconButton(
@@ -132,6 +132,19 @@ class _TopBarState extends State<TopBar> {
   };
 
   Future<void> _showDatePicker(BuildContext context) async {
+    if (_isAndroid) {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: widget.selectedDate,
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100),
+        helpText: '날짜 선택',
+        cancelText: '취소',
+        confirmText: '선택',
+      );
+      if (picked != null && mounted) widget.onDateSelected(picked);
+      return;
+    }
     var picked = widget.selectedDate;
     await showCupertinoModalPopup<void>(
       context: context,
@@ -217,8 +230,8 @@ class _TopBarState extends State<TopBar> {
     return _controlSurface(
       radius: 20,
       child: SizedBox(
-        width: 40,
-        height: 40,
+        width: _isAndroid ? 48 : 40,
+        height: _isAndroid ? 48 : 40,
         child: IconButton(
           style: _iconButtonStyle,
           tooltip: tooltip,
@@ -236,8 +249,8 @@ class _TopBarState extends State<TopBar> {
     required Color color,
   }) {
     return SizedBox(
-      width: 44,
-      height: 44,
+      width: _isAndroid ? 48 : 44,
+      height: _isAndroid ? 48 : 44,
       child: IconButton(
         style: _iconButtonStyle,
         tooltip: tooltip,

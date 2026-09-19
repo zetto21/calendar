@@ -45,6 +45,11 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
       unawaited(ServerConnectionNotifications.initialize());
       _checkConnection();
     });
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _checkConnection(),
@@ -54,7 +59,13 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
-    if (_foreground) _checkConnection();
+    if (_foreground) {
+      _startTimer();
+      _checkConnection();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   Future<void> _checkConnection() async {

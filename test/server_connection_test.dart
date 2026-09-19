@@ -104,4 +104,29 @@ void main() {
     expect(checks, greaterThanOrEqualTo(3));
     await tester.pumpWidget(const SizedBox());
   });
+  testWidgets('pauses probes in background and checks immediately on resume', (
+    tester,
+  ) async {
+    var checks = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ServerConnectionMonitor(
+          checkConnection: () async {
+            checks++;
+            return true;
+          },
+          child: const SizedBox(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    final before = checks;
+    await tester.pump(const Duration(seconds: 10));
+    expect(checks, before);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(checks, before + 1);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

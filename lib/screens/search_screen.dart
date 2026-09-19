@@ -42,18 +42,25 @@ class _SearchScreenState extends State<SearchScreen> {
         : lightTheme;
     final store = context.watch<EventStore>();
     final query = _controller.text.trim().toLowerCase();
-    final events = expandEvents(
-      store.events,
-      widget.rangeFrom,
-      widget.rangeTo,
-      widget.deviceZone,
-    );
-    final matches = <String, List<CalendarEvent>>{
-      for (final entry in events.entries)
-        entry.key: entry.value
+    // Match stored series before expanding their occurrences. Empty searches
+    // show a prompt and need no recurrence calculation at all.
+    final candidates = <String, List<CalendarEvent>>{};
+    if (query.isNotEmpty) {
+      for (final entry in store.events.entries) {
+        final matching = entry.value
             .where((event) => event.title.toLowerCase().contains(query))
-            .toList(),
-    };
+            .toList();
+        if (matching.isNotEmpty) candidates[entry.key] = matching;
+      }
+    }
+    final matches = candidates.isEmpty
+        ? <String, List<CalendarEvent>>{}
+        : expandEvents(
+            candidates,
+            widget.rangeFrom,
+            widget.rangeTo,
+            widget.deviceZone,
+          );
     final count = matches.values.fold(
       0,
       (count, events) => count + events.length,

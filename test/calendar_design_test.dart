@@ -158,7 +158,7 @@ void main() {
     await tester.pump();
     expect(find.text('오늘'), findsOneWidget);
     expect(find.byType(CupertinoDatePicker), findsOneWidget);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   for (final theme in [lightTheme, darkTheme]) {
     testWidgets(
