@@ -10,41 +10,55 @@ class EventListView extends StatelessWidget {
   final EventMap events;
   final ValueChanged<CalendarEvent> onEventPress;
 
-  const EventListView({super.key, required this.theme, required this.events, required this.onEventPress});
+  const EventListView({
+    super.key,
+    required this.theme,
+    required this.events,
+    required this.onEventPress,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final keys = events.keys.where((key) => events[key]!.isNotEmpty).toList()..sort();
+    final keys = events.keys.where((key) => events[key]!.isNotEmpty).toList()
+      ..sort();
     if (keys.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-        child: Text('일정이 없습니다', style: TextStyle(color: theme.textMuted, fontSize: 13)),
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
+        child: Text(
+          '일정이 없습니다',
+          style: TextStyle(color: theme.textMuted, fontSize: 13),
+        ),
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 112),
       itemCount: keys.length,
       itemBuilder: (context, index) {
         final key = keys[index];
         final date = date_utils.parseDateKey(key);
-        final dayEvents = [...events[key]!]..sort((a, b) {
+        final dayEvents = [...events[key]!]
+          ..sort((a, b) {
             if (a.time == null) return -1;
             if (b.time == null) return 1;
-            return date_utils.minutesFromTime(a.time!).compareTo(date_utils.minutesFromTime(b.time!));
+            return date_utils
+                .minutesFromTime(a.time!)
+                .compareTo(date_utils.minutesFromTime(b.time!));
           });
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${date.month}월 ${date.day}일 (${date_utils.weekdays[date.weekday % 7]})',
-                style: TextStyle(color: theme.text, fontSize: 14, fontWeight: FontWeight.w700),
+        return Column(
+          children: [
+            for (
+              var eventIndex = 0;
+              eventIndex < dayEvents.length;
+              eventIndex++
+            )
+              _EventRow(
+                theme: theme,
+                date: date,
+                showDate: eventIndex == 0,
+                event: dayEvents[eventIndex],
+                onTap: () => onEventPress(dayEvents[eventIndex]),
               ),
-              const SizedBox(height: 8),
-              for (final event in dayEvents) _EventRow(theme: theme, event: event, onTap: () => onEventPress(event)),
-            ],
-          ),
+          ],
         );
       },
     );
@@ -53,40 +67,128 @@ class EventListView extends StatelessWidget {
 
 class _EventRow extends StatelessWidget {
   final AppTheme theme;
+  final DateTime date;
+  final bool showDate;
   final CalendarEvent event;
   final VoidCallback onTap;
 
-  const _EventRow({required this.theme, required this.event, required this.onTap});
+  const _EventRow({
+    required this.theme,
+    required this.date,
+    required this.showDate,
+    required this.event,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final color = colorFromHex(event.color);
+    final weekdayColor = date.weekday == DateTime.sunday
+        ? const Color(0xFFFF6B52)
+        : date.weekday == DateTime.saturday
+        ? const Color(0xFF0A84FF)
+        : theme.text;
     return InkWell(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        constraints: const BoxConstraints(minHeight: 94),
+        padding: const EdgeInsets.symmetric(vertical: 9),
         decoration: BoxDecoration(
-          color: withAlpha(color, 0.1),
-          border: Border(left: BorderSide(color: color, width: 3)),
-          borderRadius: BorderRadius.circular(8),
+          border: Border(
+            bottom: BorderSide(color: theme.border.withValues(alpha: 0.65)),
+          ),
         ),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(event.title, style: TextStyle(color: theme.text, fontSize: 14, fontWeight: FontWeight.w600)),
-            Text(event.time != null ? date_utils.formatTimeLabel(event.time!) : '종일', style: TextStyle(color: theme.textSecondary, fontSize: 12)),
-            if (event.recurrence != null) Text('↻ 반복 일정', style: TextStyle(color: theme.textSecondary, fontSize: 12)),
-            if (event.location != null && event.location!.isNotEmpty)
-              Text(event.location!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.textSecondary, fontSize: 12)),
-            if (event.description != null && event.description!.isNotEmpty)
-              Text(event.description!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.textSecondary, fontSize: 12)),
-            if (event.url != null && event.url!.isNotEmpty)
-              Text('↗ ${event.url}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: theme.accent, fontSize: 12)),
+            SizedBox(
+              width: 60,
+              child: showDate
+                  ? Column(
+                      children: [
+                        Text(
+                          date_utils.weekdays[date.weekday % 7],
+                          style: TextStyle(
+                            color: weekdayColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${date.day}',
+                          style: TextStyle(
+                            color: weekdayColor,
+                            fontSize: 27,
+                            fontWeight: FontWeight.w500,
+                            height: 1,
+                          ),
+                        ),
+                      ],
+                    )
+                  : null,
+            ),
+            SizedBox(
+              width: 7,
+              height: 76,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(5),
+                ),
+              ),
+            ),
+            const SizedBox(width: 24),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2, right: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      event.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: theme.text,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (event.time != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        _timeRange(),
+                        style: TextStyle(color: theme.text, fontSize: 15),
+                      ),
+                    ],
+                    if (event.description?.isNotEmpty == true) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        event.description!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: theme.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  String _timeRange() {
+    final start = date_utils.minutesFromTime(event.time!);
+    final end = date_utils.timeFromMinutes(start + event.duration);
+    return '${date_utils.formatTimeLabel(event.time!)} – ${date_utils.formatTimeLabel(end)}';
   }
 }

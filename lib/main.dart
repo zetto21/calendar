@@ -638,12 +638,26 @@ class _CalendarHomeState extends State<CalendarHome>
           (imported[event.date] ??= []).add(
             event.copyWith(
               id: 'import:$provider:${event.systemEventId ?? event.id}',
+              systemCalendarId:
+                  '$provider|${event.systemCalendarId ?? selectedCalendars.first.id}',
               description:
                   '${provider == 'naver' ? '네이버/CalDAV' : 'Apple'} · 읽기 전용',
             ),
           );
         }
         if (!mounted) return;
+        await importedEvents.setDeviceSources(
+          provider,
+          selectedCalendars
+              .map(
+                (calendar) => ImportCalendar(
+                  id: calendar.id,
+                  title: calendar.title,
+                  color: '#0A84FF',
+                ),
+              )
+              .toList(),
+        );
         importedEvents.replaceProvider(provider, imported);
         if (mounted && provider == 'naver') {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -726,6 +740,8 @@ class _CalendarHomeState extends State<CalendarHome>
           Navigator.of(sheetContext).pop();
           await _connectCalendar(provider);
         },
+        onDisconnect: (provider, calendar) =>
+            imports.disconnect(provider, calendar.id),
       ),
     );
   }
@@ -1100,7 +1116,7 @@ class _CalendarHomeState extends State<CalendarHome>
           value,
           () => _showSolarTerms = value,
         ),
-        importedCount: imported.sources.length,
+        imports: imported,
         onManageCalendars: _showCalendarConnections,
         onSettings: () {
           _scaffoldKey.currentState?.closeDrawer();
@@ -1119,7 +1135,6 @@ class _CalendarHomeState extends State<CalendarHome>
             ),
           );
         },
-        onLogout: widget.onLogout,
       ),
       body: SafeArea(
         bottom: false,
@@ -1396,8 +1411,7 @@ class _AccountDrawer extends StatelessWidget {
   final ValueChanged<bool> onHolidaysChanged;
   final ValueChanged<bool> onLunarChanged;
   final ValueChanged<bool> onSolarTermsChanged;
-  final VoidCallback onLogout;
-  final int importedCount;
+  final ImportedEvents imports;
   final VoidCallback onManageCalendars;
   final VoidCallback onSettings;
   const _AccountDrawer({
@@ -1411,8 +1425,7 @@ class _AccountDrawer extends StatelessWidget {
     required this.onHolidaysChanged,
     required this.onLunarChanged,
     required this.onSolarTermsChanged,
-    required this.onLogout,
-    required this.importedCount,
+    required this.imports,
     required this.onManageCalendars,
     required this.onSettings,
   });
@@ -1485,13 +1498,13 @@ class _AccountDrawer extends StatelessWidget {
               const SizedBox(height: 16),
               Divider(color: theme.border, height: 1),
               const SizedBox(height: 20),
-              _sectionTitle('추가 캘린더'),
-              const SizedBox(height: 10),
-              _calendarConnect(
-                importedCount == 0 ? '캘린더 연동' : '연동된 캘린더 $importedCount개',
-                CupertinoIcons.calendar_badge_plus,
-                onManageCalendars,
-              ),
+              if (imports.sources.isNotEmpty) ...[
+                _sectionTitle('표시할 캘린더'),
+                const SizedBox(height: 6),
+                for (final entry in imports.sources.entries)
+                  for (final calendar in entry.value)
+                    _importedCalendarToggle(entry.key, calendar),
+              ],
               _displayCheckbox(
                 label: '법정 기념일',
                 value: showAnniversaries,
@@ -1516,17 +1529,6 @@ class _AccountDrawer extends StatelessWidget {
                 value: showSolarTerms,
                 onChanged: onSolarTermsChanged,
               ),
-              const Spacer(),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  onLogout();
-                },
-                child: Text(
-                  user != null ? '로그아웃' : '로그인',
-                  style: TextStyle(color: theme.textSecondary, fontSize: 12),
-                ),
-              ),
             ],
           ),
         ),
@@ -1546,30 +1548,12 @@ class _AccountDrawer extends StatelessWidget {
     ),
   );
 
-  Widget _calendarConnect(String label, IconData icon, VoidCallback onTap) =>
-      InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: SizedBox(
-          height: 42,
-          child: Row(
-            children: [
-              Icon(icon, size: 20, color: theme.textSecondary),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(color: theme.text, fontSize: 15),
-                ),
-              ),
-              Icon(
-                CupertinoIcons.chevron_right,
-                size: 16,
-                color: theme.textMuted,
-              ),
-            ],
-          ),
-        ),
+  Widget _importedCalendarToggle(String provider, ImportCalendar calendar) =>
+      _displayCheckbox(
+        label: calendar.title,
+        value: imports.isVisible(provider, calendar.id),
+        selectedColor: colorFromHex(calendar.color),
+        onChanged: (value) => imports.setVisible(provider, calendar.id, value),
       );
 
   Widget _displayCheckbox({
@@ -1577,6 +1561,7 @@ class _AccountDrawer extends StatelessWidget {
     required bool value,
     required ValueChanged<bool> onChanged,
     bool subscription = false,
+    Color? selectedColor,
   }) {
     return Semantics(
       label: label,
@@ -1595,7 +1580,9 @@ class _AccountDrawer extends StatelessWidget {
                     ? CupertinoIcons.checkmark_square_fill
                     : CupertinoIcons.square,
                 size: 23,
-                color: subscription ? theme.textSecondary : theme.textMuted,
+                color: value && selectedColor != null
+                    ? selectedColor
+                    : (subscription ? theme.textSecondary : theme.textMuted),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1616,10 +1603,13 @@ class _CalendarConnectionsSheet extends StatelessWidget {
   final AppTheme theme;
   final ImportedEvents imports;
   final ValueChanged<String> onConnect;
+  final Future<void> Function(String provider, ImportCalendar calendar)
+  onDisconnect;
   const _CalendarConnectionsSheet({
     required this.theme,
     required this.imports,
     required this.onConnect,
+    required this.onDisconnect,
   });
 
   @override
@@ -1705,7 +1695,7 @@ class _CalendarConnectionsSheet extends StatelessWidget {
             if (imports.sources.isNotEmpty) ...[
               const SizedBox(height: 22),
               Text(
-                '표시할 캘린더',
+                '연동된 캘린더',
                 style: TextStyle(
                   color: theme.textSecondary,
                   fontSize: 13,
@@ -1719,7 +1709,7 @@ class _CalendarConnectionsSheet extends StatelessWidget {
                   children: [
                     for (final entry in imports.sources.entries)
                       for (final calendar in entry.value)
-                        _visibilityRow(entry.key, calendar),
+                        _connectedCalendarRow(context, entry.key, calendar),
                   ],
                 ),
               ),
@@ -1826,8 +1816,11 @@ class _CalendarConnectionsSheet extends StatelessWidget {
     );
   }
 
-  Widget _visibilityRow(String provider, ImportCalendar calendar) {
-    final visible = imports.isVisible(provider, calendar.id);
+  Widget _connectedCalendarRow(
+    BuildContext context,
+    String provider,
+    ImportCalendar calendar,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1853,14 +1846,45 @@ class _CalendarConnectionsSheet extends StatelessWidget {
               style: TextStyle(color: theme.text, fontSize: 14),
             ),
           ),
-          CupertinoSwitch(
-            value: visible,
-            onChanged: (value) =>
-                imports.setVisible(provider, calendar.id, value),
+          CupertinoButton(
+            padding: const EdgeInsets.all(6),
+            minimumSize: const Size(32, 32),
+            onPressed: () => _confirmDisconnect(context, provider, calendar),
+            child: const Icon(
+              CupertinoIcons.trash,
+              color: CupertinoColors.systemRed,
+              size: 19,
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDisconnect(
+    BuildContext context,
+    String provider,
+    ImportCalendar calendar,
+  ) async {
+    final remove = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('연동 해제'),
+        content: Text('${calendar.title} 캘린더 연동을 해제할까요?'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('취소'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('해제'),
+          ),
+        ],
+      ),
+    );
+    if (remove == true) await onDisconnect(provider, calendar);
   }
 }
 

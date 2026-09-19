@@ -131,6 +131,57 @@ class ImportedEvents extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Stores a device calendar connection even though its events are read
+  /// directly through EventKit instead of the remote import endpoint.
+  Future<void> setDeviceSources(
+    String provider,
+    List<ImportCalendar> calendars,
+  ) async {
+    _sources[provider] = calendars;
+    await _persistSources();
+    notifyListeners();
+  }
+
+  /// Removes a calendar connection and all read-only events it contributed.
+  Future<void> disconnect(String provider, String calendarId) async {
+    final calendars = _sources[provider];
+    if (calendars == null) return;
+    final remaining = calendars.where((item) => item.id != calendarId).toList();
+    if (remaining.isEmpty) {
+      _sources.remove(provider);
+    } else {
+      _sources[provider] = remaining;
+    }
+    _visibility.remove('$provider|$calendarId');
+    _events = {
+      for (final entry in _events.entries)
+        entry.key: entry.value
+            .where((event) => event.systemCalendarId != '$provider|$calendarId')
+            .toList(),
+    }..removeWhere((_, items) => items.isEmpty);
+    await _persistSources();
+    await AccountPreferences.instance.set(
+      _visibilityKey,
+      jsonEncode(_visibility),
+    );
+    notifyListeners();
+  }
+
+  Future<void> _persistSources() => AccountPreferences.instance.set(
+    _sourcesKey,
+    jsonEncode({
+      for (final entry in _sources.entries)
+        entry.key: [
+          for (final calendar in entry.value)
+            {
+              'id': calendar.id,
+              'title': calendar.title,
+              'color': calendar.color,
+            },
+        ],
+    }),
+  );
+
   Future<void> refresh(
     String provider,
     List<ImportCalendar> calendars,
@@ -168,17 +219,6 @@ class ImportedEvents extends ChangeNotifier {
     if (generation != _accountGeneration) return;
     replaceProvider(provider, next);
     _sources[provider] = calendars;
-    final encoded = jsonEncode({
-      for (final entry in _sources.entries)
-        entry.key: [
-          for (final calendar in entry.value)
-            {
-              'id': calendar.id,
-              'title': calendar.title,
-              'color': calendar.color,
-            },
-        ],
-    });
-    await AccountPreferences.instance.set(_sourcesKey, encoded);
+    await _persistSources();
   }
 }
