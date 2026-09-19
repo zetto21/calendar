@@ -19,17 +19,19 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Some plugins (e.g. shared_preferences_android) ship mismatched Java/Kotlin
-// JVM targets of their own. Force every subproject's Java and Kotlin compile
-// tasks to the same target so they stop clashing.
-subprojects {
-    tasks.withType(JavaCompile::class.java).configureEach {
-        sourceCompatibility = JavaVersion.VERSION_17.toString()
-        targetCompatibility = JavaVersion.VERSION_17.toString()
-    }
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).configureEach {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+// Some plugins configure their target late in their own build script. Apply
+// the common target once every subproject is evaluated so Java and Kotlin
+// compilation tasks cannot end up with mismatched JVM targets.
+gradle.projectsEvaluated {
+    subprojects {
+        tasks.withType(JavaCompile::class.java).configureEach {
+            sourceCompatibility = JavaVersion.VERSION_17.toString()
+            targetCompatibility = JavaVersion.VERSION_17.toString()
+        }
+        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).configureEach {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            }
         }
     }
 }

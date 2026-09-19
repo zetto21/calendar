@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Android: forward local API",
+      "type": "process",
+      "command": "sh",
+      "args": [
+        "${workspaceFolder}/scripts/android-local-server.sh",
+        "emulator-5554"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

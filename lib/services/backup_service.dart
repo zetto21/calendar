@@ -137,23 +137,16 @@ class BackupService {
   static String _escapeCsv(String value) => '"${value.replaceAll('"', '""')}"';
 
   static Future<bool> restoreData(EventStore events) async {
-    final picked = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['ics', 'csv', 'json'],
-      withData: true,
-      allowMultiple: false,
     );
-    final selected = picked?.files.single;
-    final bytes =
-        selected?.bytes ??
-        (selected?.path == null
-            ? null
-            : await File(selected!.path!).readAsBytes());
-    if (bytes == null) return false;
+    if (picked.isEmpty) return false;
+    final selected = picked.single;
+    final bytes = await selected.readAsBytes();
     final content = utf8.decode(bytes, allowMalformed: true);
     final extension =
-        (selected?.extension ?? selected?.name.split('.').last ?? '')
-            .toLowerCase();
+        (selected.extension ?? selected.name.split('.').last).toLowerCase();
 
     if (extension == 'ics') {
       await events.restoreBackup(_fromIcs(content));

@@ -95,17 +95,47 @@ class AuthService {
   );
 
   static String get apiBase {
-    var base = _configuredBase;
+    return resolveApiBase(
+      _configuredBase,
+      isAndroid: !kIsWeb && Platform.isAndroid,
+    );
+  }
+
+  @visibleForTesting
+  static String resolveApiBase(
+    String configuredBase, {
+    required bool isAndroid,
+  }) {
+    var base = configuredBase;
     if (base.endsWith('/')) base = base.substring(0, base.length - 1);
     // The Android emulator's own loopback isn't the host machine's; 10.0.2.2
     // is the special alias Android provides for reaching it.
-    if (!kIsWeb && Platform.isAndroid) {
-      base = base.replaceFirst(
+    if (isAndroid) {
+      base = base.replaceFirstMapped(
         RegExp(r'^(https?://)(localhost|127\.0\.0\.1)(?=[:/]|$)'),
-        r'$110.0.2.2',
+        (match) => '${match[1]}10.0.2.2',
       );
     }
     return base;
+  }
+
+  /// Probe reachability without depending on the OAuth provider configuration.
+  /// Closing this dedicated client also cancels a request that times out.
+  Future<bool> checkConnection({
+    http.Client? client,
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    final probe = client ?? http.Client();
+    try {
+      final response = await probe
+          .get(Uri.parse('$apiBase/api/auth/oauth/providers'))
+          .timeout(timeout);
+      return response.statusCode < 500;
+    } catch (_) {
+      return false;
+    } finally {
+      probe.close();
+    }
   }
 
   Future<T> _request<T>(

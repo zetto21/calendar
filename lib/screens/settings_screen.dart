@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 
 import '../services/backup_service.dart';
 import '../theme/app_theme.dart';
@@ -27,6 +30,7 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_isAndroid) return _buildAndroid(context);
     return CupertinoTheme(
       data: CupertinoThemeData(
         brightness: theme.isDark ? Brightness.dark : Brightness.light,
@@ -211,39 +215,229 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _showInfo(BuildContext context, String title, String message) =>
-      showCupertinoDialog<void>(
+  bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
+
+  Widget _buildAndroid(BuildContext context) {
+    final materialTheme = ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: theme.accent,
+        brightness: theme.isDark ? Brightness.dark : Brightness.light,
+      ),
+    );
+    return Theme(
+      data: materialTheme,
+      child: Builder(
+        builder: (context) {
+          final colors = Theme.of(context).colorScheme;
+          Widget section(String title, List<Widget> tiles) => Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.labelLarge
+                        ?.copyWith(color: colors.primary),
+                  ),
+                ),
+                Card.filled(
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(children: tiles),
+                ),
+              ],
+            ),
+          );
+          Widget tile(
+            IconData icon,
+            String title, {
+            String? subtitle,
+            VoidCallback? onTap,
+            bool destructive = false,
+          }) => ListTile(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 6,
+            ),
+            leading: Icon(
+              icon,
+              color: destructive ? colors.error : colors.onSurfaceVariant,
+            ),
+            title: Text(
+              title,
+              style: destructive ? TextStyle(color: colors.error) : null,
+            ),
+            subtitle: subtitle == null ? null : Text(subtitle),
+            trailing: onTap == null ? null : const Icon(Icons.chevron_right),
+            onTap: onTap,
+          );
+          return Scaffold(
+            appBar: AppBar(title: const Text('설정'), centerTitle: false),
+            body: SafeArea(
+              top: false,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  section('계정', [
+                    tile(
+                      Icons.account_circle_outlined,
+                      '로그인 계정',
+                      subtitle: accountLabel,
+                    ),
+                    const Divider(height: 1, indent: 60),
+                    tile(
+                      Icons.logout,
+                      '로그아웃',
+                      destructive: true,
+                      onTap: () => _confirmLogout(context),
+                    ),
+                  ]),
+                  if (onBackup != null || onRestore != null)
+                    section('데이터 관리', [
+                      if (onBackup != null)
+                        tile(
+                          Icons.backup_outlined,
+                          '데이터 백업하기',
+                          subtitle: '일정을 ICS 및 CSV 파일로 저장',
+                          onTap: () => _confirmBackup(context),
+                        ),
+                      if (onRestore != null)
+                        tile(
+                          Icons.restore,
+                          '데이터 복원하기',
+                          subtitle: '백업 파일에서 일정과 설정 복원',
+                          onTap: () => _confirmRestore(context),
+                        ),
+                    ]),
+                  section('법률 정보 및 이용 약관', [
+                    tile(
+                      Icons.description_outlined,
+                      '이용약관',
+                      onTap: () => _showInfo(
+                        context,
+                        '이용약관',
+                        '캘린더 서비스 이용에 관한 약관입니다. 서비스 이용 전 내용을 확인해 주세요.',
+                      ),
+                    ),
+                    tile(
+                      Icons.privacy_tip_outlined,
+                      '개인정보 처리방침',
+                      onTap: () => _showInfo(
+                        context,
+                        '개인정보 처리방침',
+                        '서비스 제공에 필요한 정보만 처리하며, 개인정보 보호 관련 내용을 안내합니다.',
+                      ),
+                    ),
+                  ]),
+                  section('프로그램 정보', [
+                    tile(
+                      Icons.calendar_month_outlined,
+                      '캘린더',
+                      subtitle: '0.1.0 베타',
+                    ),
+                  ]),
+                  section('안내', [
+                    tile(
+                      Icons.notifications_outlined,
+                      '공시사항',
+                      onTap: () =>
+                          _showInfo(context, '공시사항', '현재 등록된 공시사항이 없습니다.'),
+                    ),
+                    tile(
+                      Icons.support_agent,
+                      '고객센터',
+                      onTap: () => _showInfo(
+                        context,
+                        '고객센터',
+                        '문의 사항은 고객센터를 통해 접수해 주세요.',
+                      ),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<bool?> _dialog(
+    BuildContext context,
+    String title,
+    String message, {
+    String action = '확인',
+    bool confirm = false,
+    bool destructive = false,
+  }) {
+    if (_isAndroid) {
+      return showDialog<bool>(
         context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
+        builder: (dialogContext) => AlertDialog(
           title: Text(title),
           content: Text(message),
           actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('확인'),
+            if (confirm)
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('취소'),
+              ),
+            TextButton(
+              style: destructive
+                  ? TextButton.styleFrom(
+                      foregroundColor: Theme.of(dialogContext)
+                          .colorScheme
+                          .error,
+                    )
+                  : null,
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(action),
             ),
           ],
         ),
       );
-
-  Future<void> _confirmLogout(BuildContext context) async {
-    final confirmed = await showCupertinoDialog<bool>(
+    }
+    return showCupertinoDialog<bool>(
       context: context,
       builder: (dialogContext) => CupertinoAlertDialog(
-        title: const Text('로그아웃'),
-        content: const Text('이 계정에서 로그아웃할까요?'),
+        title: Text(title),
+        content: Text(message),
         actions: [
+          if (confirm)
+            CupertinoDialogAction(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('취소'),
+            ),
           CupertinoDialogAction(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
+            isDestructiveAction: destructive,
+            isDefaultAction: confirm && !destructive,
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('로그아웃'),
+            child: Text(action),
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showInfo(
+    BuildContext context,
+    String title,
+    String message,
+  ) async {
+    await _dialog(context, title, message);
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await _dialog(
+      context,
+      '로그아웃',
+      '이 계정에서 로그아웃할까요?',
+      action: '로그아웃',
+      confirm: true,
+      destructive: true,
     );
     if (confirmed == true && context.mounted) {
       Navigator.of(context).pop();
@@ -252,66 +446,59 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _confirmRestore(BuildContext context) async {
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
-        title: const Text('데이터 복원'),
-        content: const Text('현재 일정과 표시 설정이 백업 파일 내용으로 바뀝니다.'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('복원'),
-          ),
-        ],
-      ),
+    final confirmed = await _dialog(
+      context,
+      '데이터 복원',
+      '현재 일정과 표시 설정이 백업 파일 내용으로 바뀝니다.',
+      action: '복원',
+      confirm: true,
+      destructive: true,
     );
     if (confirmed == true) await onRestore?.call();
   }
 
   Future<void> _confirmBackup(BuildContext context) async {
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
-        title: const Text('데이터 백업'),
-        content: const Text('일정을 .ics와 .csv 파일로 백업할까요?'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('백업'),
-          ),
-        ],
-      ),
+    final confirmed = await _dialog(
+      context,
+      '데이터 백업',
+      '일정을 .ics와 .csv 파일로 백업할까요?',
+      action: '백업',
+      confirm: true,
+      destructive: false,
     );
     if (confirmed != true || onBackup == null || !context.mounted) return;
 
     final progress = ValueNotifier<double>(0);
     unawaited(
-      showCupertinoDialog<void>(
+      (_isAndroid ? showDialog<void> : showCupertinoDialog<void>)(
         context: context,
         barrierDismissible: false,
-        builder: (_) => ValueListenableBuilder<double>(
-          valueListenable: progress,
-          builder: (_, value, _) => CupertinoAlertDialog(
-            title: const Text('백업 중'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 12),
-                CupertinoActivityIndicator.partiallyRevealed(progress: value),
-                const SizedBox(height: 12),
-                Text('${(value * 100).round()}% 완료'),
-              ],
-            ),
+        builder: (_) => PopScope(
+          canPop: false,
+          child: ValueListenableBuilder<double>(
+            valueListenable: progress,
+            builder: (_, value, _) {
+              final content = Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 16),
+                  if (_isAndroid)
+                    LinearProgressIndicator(value: value)
+                  else
+                    CupertinoActivityIndicator.partiallyRevealed(
+                      progress: value,
+                    ),
+                  const SizedBox(height: 16),
+                  Text('${(value * 100).round()}% 완료'),
+                ],
+              );
+              return _isAndroid
+                  ? AlertDialog(title: const Text('백업 중'), content: content)
+                  : CupertinoAlertDialog(
+                      title: const Text('백업 중'),
+                      content: content,
+                    );
+            },
           ),
         ),
       ),

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="24dp">
+    <!-- Adaptive icons display only the central safe zone. Keep the complete
+         calendar-and-sun artwork inside it so no edges are clipped. -->
+    <bitmap
+        android:gravity="fill"
+        android:src="@drawable/ic_launcher_foreground_image" />
+</inset>

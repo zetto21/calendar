@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
@@ -223,6 +224,27 @@ class _LoginScreenState extends State<LoginScreen>
     final googleEnabled = _isSocialProviderEnabled(google.id);
     final blue = CupertinoColors.activeBlue.resolveFrom(context);
     const darkButton = Color(0xFF1C1C1E);
+    final isAndroid =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    final appleButton = _buildOptionButton(
+      label: 'Apple 계정으로 계속 진행',
+      icon: const Icon(Icons.apple, color: Colors.white, size: 31),
+      color: darkButton,
+      enabled: appleEnabled,
+      onPressed: _isAuthenticating || !appleEnabled
+          ? null
+          : () => _socialLogin(apple.id),
+    );
+    final googleButton = _buildOptionButton(
+      label: 'Google 계정으로 계속 진행',
+      icon: SizedBox(width: 29, height: 29, child: google.mark(context)),
+      color: Colors.white,
+      foregroundColor: const Color(0xFF1F1F1F),
+      enabled: googleEnabled,
+      onPressed: _isAuthenticating || !googleEnabled
+          ? null
+          : () => _socialLogin(google.id),
+    );
     return Scaffold(
       backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
         context,
@@ -250,40 +272,9 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
                 const SizedBox(height: 14),
-                _enter(
-                  order: 2,
-                  child: _buildOptionButton(
-                    label: 'Apple 계정으로 계속 진행',
-                    icon: const Icon(
-                      Icons.apple,
-                      color: Colors.white,
-                      size: 31,
-                    ),
-                    color: darkButton,
-                    enabled: appleEnabled,
-                    onPressed: _isAuthenticating || !appleEnabled
-                        ? null
-                        : () => _socialLogin(apple.id),
-                  ),
-                ),
+                _enter(order: 2, child: isAndroid ? googleButton : appleButton),
                 const SizedBox(height: 14),
-                _enter(
-                  order: 3,
-                  child: _buildOptionButton(
-                    label: 'Google 계정으로 계속 진행',
-                    icon: SizedBox(
-                      width: 29,
-                      height: 29,
-                      child: google.mark(context),
-                    ),
-                    color: Colors.white,
-                    foregroundColor: const Color(0xFF1F1F1F),
-                    enabled: googleEnabled,
-                    onPressed: _isAuthenticating || !googleEnabled
-                        ? null
-                        : () => _socialLogin(google.id),
-                  ),
-                ),
+                _enter(order: 3, child: isAndroid ? appleButton : googleButton),
                 const SizedBox(height: 20),
                 _enter(order: 4, child: _buildOtherSocialSection()),
               ],
