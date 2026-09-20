@@ -41,7 +41,7 @@ void main() {
     expect(find.text('일정이 없습니다'), findsNothing);
     await tester.tap(find.text('국군의 날'));
     expect(edits, 0);
-    await tester.tap(find.text('시간표'));
+    await tester.tap(find.byTooltip('시간표 보기'));
     await tester.pumpAndSettle();
     expect(find.text('국군의 날'), findsOneWidget);
     await tester.tap(find.text('국군의 날'));
@@ -124,10 +124,10 @@ void main() {
     expect(find.text('추분'), findsNothing);
     expect(find.text('종일'), findsNothing);
     expect(find.text('일정이 없습니다'), findsOneWidget);
-    await tester.tap(find.text('시간표'));
+    await tester.tap(find.byTooltip('시간표 보기'));
     await tester.pumpAndSettle();
     expect(find.text('추분'), findsNothing);
-    await tester.tap(find.text('목록'));
+    await tester.tap(find.byTooltip('목록 보기'));
     await tester.pumpAndSettle();
     await tester.pumpWidget(calendar({}));
     await tester.pumpAndSettle();
@@ -189,7 +189,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('일정이 없습니다'), findsOneWidget);
         expect(tester.takeException(), isNull);
-        await tester.tap(find.text('시간표'));
+        await tester.tap(find.byTooltip('시간표 보기'));
         await tester.pumpAndSettle();
         expect(find.byType(TimeGridView), findsOneWidget);
         expect(tester.takeException(), isNull);

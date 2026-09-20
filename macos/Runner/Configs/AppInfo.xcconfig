@@ -5,7 +5,9 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = calendar_app_flutter
+PRODUCT_NAME = 일상 캘린더
+// Keep the executable ASCII-only to avoid Unicode normalization issues in code signing.
+EXECUTABLE_NAME = Calendar
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = com.zetto.calendarAppFlutter

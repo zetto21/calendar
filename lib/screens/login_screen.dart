@@ -7,6 +7,7 @@ import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/brand_marks.dart';
+import '../widgets/macos_login_brand.dart';
 import '../widgets/liquid_glass.dart';
 import '../widgets/server_connection_monitor.dart';
 
@@ -150,9 +151,6 @@ class _LoginScreenState extends State<LoginScreen>
       widget.onAuthenticated(user);
     } catch (error) {
       if (!mounted) return;
-      if (error is ServerConnectionException) {
-        return;
-      }
       _showLoginFailure(
         error is AuthException ? error.message : '간편 로그인에 실패했습니다.',
       );
@@ -195,9 +193,6 @@ class _LoginScreenState extends State<LoginScreen>
       widget.onAuthenticated(user);
     } catch (error) {
       if (!mounted) return;
-      if (error is ServerConnectionException) {
-        return;
-      }
       _showLoginFailure(
         error is AuthException ? error.message : '로그인하지 못했습니다.',
       );
@@ -206,14 +201,338 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  static bool get _isDesktop =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux);
+
   @override
   Widget build(BuildContext context) {
-    return _emailFormVisible
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+      return _buildMacLogin();
+    }
+    final form = _emailFormVisible
         ? _buildEmailLogin(context)
-        : _buildLoginOptions(context);
+        : _buildLoginOptions(context, desktop: _isDesktop);
+    if (!_isDesktop) return form;
+    return Scaffold(
+      backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
+        context,
+      ),
+      body: LayoutBuilder(
+        builder: (context, viewport) {
+          final wide = viewport.maxWidth >= 860;
+          return Row(
+            children: [
+              if (wide) Expanded(flex: 5, child: _buildDesktopBrandPanel()),
+              Expanded(
+                flex: 4,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 460),
+                    child: form,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
-  Widget _buildLoginOptions(BuildContext context) {
+  Widget _buildMacLogin() {
+    final theme = widget.theme;
+    return Scaffold(
+      backgroundColor: theme.bg,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, viewport) {
+            final wide = viewport.maxWidth >= 900;
+            return Row(
+              children: [
+                if (wide) Expanded(child: MacosLoginBrand(theme: theme)),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: viewport.maxWidth < 420 ? 24 : 48,
+                      vertical: 36,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: (viewport.maxHeight - 72).clamp(
+                          0,
+                          double.infinity,
+                        ),
+                      ),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 360),
+                          child: AutofillGroup(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Align(
+                                  alignment: Alignment.center,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Image.asset(
+                                      'assets/login/app-icon.png',
+                                      width: 56,
+                                      height: 56,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '나의 하루를 차곡차곡',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: theme.accent,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                Text(
+                                  '일상 캘린더에 오신 것을 환영해요',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: theme.text,
+                                    fontSize: 27,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -1.2,
+                                    height: 1.35,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  '로그인하고 나의 하루를 이어가세요.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: theme.textSecondary,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 30),
+                                TextField(
+                                  controller: _emailController,
+                                  enabled: !_isAuthenticating,
+                                  autofillHints: const [
+                                    AutofillHints.username,
+                                    AutofillHints.email,
+                                  ],
+                                  keyboardType: TextInputType.emailAddress,
+                                  textInputAction: TextInputAction.next,
+                                  autocorrect: false,
+                                  onSubmitted: (_) =>
+                                      _passwordFocus.requestFocus(),
+                                  onChanged: (_) =>
+                                      setState(() => _message = ''),
+                                  decoration: const InputDecoration(
+                                    labelText: '이메일',
+                                    hintText: 'example@email.com',
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                TextField(
+                                  controller: _passwordController,
+                                  focusNode: _passwordFocus,
+                                  enabled: !_isAuthenticating,
+                                  autofillHints: const [AutofillHints.password],
+                                  obscureText: !_passwordVisible,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) {
+                                    if (!_isAuthenticating) _submit();
+                                  },
+                                  onChanged: (_) =>
+                                      setState(() => _message = ''),
+                                  decoration: InputDecoration(
+                                    labelText: '비밀번호',
+                                    suffixIcon: IconButton(
+                                      tooltip: _passwordVisible
+                                          ? '비밀번호 숨기기'
+                                          : '비밀번호 보기',
+                                      onPressed: () => setState(
+                                        () => _passwordVisible =
+                                            !_passwordVisible,
+                                      ),
+                                      icon: Icon(
+                                        _passwordVisible
+                                            ? CupertinoIcons.eye_slash
+                                            : CupertinoIcons.eye,
+                                        size: 19,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                if (_message.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Semantics(
+                                    liveRegion: true,
+                                    child: Text(
+                                      _message,
+                                      style: TextStyle(
+                                        color: theme.danger,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 20),
+                                SizedBox(
+                                  height: 48,
+                                  child: FilledButton(
+                                    onPressed: _isAuthenticating
+                                        ? null
+                                        : _submit,
+                                    child: _busy
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Text('로그인'),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                TextButton(
+                                  onPressed: _isAuthenticating
+                                      ? null
+                                      : widget.onSignup,
+                                  child: const Text('처음이신가요? 회원가입'),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    const Expanded(child: Divider()),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: Text(
+                                        '또는 간편 로그인',
+                                        style: TextStyle(
+                                          color: theme.textSecondary,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    const Expanded(child: Divider()),
+                                  ],
+                                ),
+                                const SizedBox(height: 18),
+                                Wrap(
+                                  alignment: WrapAlignment.center,
+                                  spacing: 12,
+                                  runSpacing: 12,
+                                  children: [
+                                    for (final id in [
+                                      SocialProvider.apple,
+                                      SocialProvider.google,
+                                      SocialProvider.kakao,
+                                      SocialProvider.naver,
+                                      SocialProvider.facebook,
+                                    ])
+                                      Tooltip(
+                                        message:
+                                            '${socialProviders.firstWhere((p) => p.id == id).label} 계정으로 로그인',
+                                        child: _buildCompactSocialButton(
+                                          socialProviders.firstWhere(
+                                            (p) => p.id == id,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                if (_providerStatus ==
+                                        _ProviderStatus.loading ||
+                                    _socialBusy != null) ...[
+                                  const SizedBox(height: 12),
+                                  const Center(
+                                    child: CupertinoActivityIndicator(),
+                                  ),
+                                ],
+                                if (_providerStatus ==
+                                    _ProviderStatus.error) ...[
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    onPressed: _checkingConnection
+                                        ? null
+                                        : _loadProviders,
+                                    child: const Text(
+                                      '간편 로그인을 불러오지 못했어요. 다시 시도',
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopBrandPanel() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF4F8CFF), Color(0xFF2456D6)],
+        ),
+      ),
+      padding: const EdgeInsets.all(56),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Image.asset(
+              'assets/login/app-icon.png',
+              width: 96,
+              height: 96,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(height: 32),
+          const Text(
+            '일상 캘린더',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 44,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -1.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            '나의 하루를 차곡차곡',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 20,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoginOptions(BuildContext context, {bool desktop = false}) {
     final apple = socialProviders.firstWhere(
       (provider) => provider.id == SocialProvider.apple,
     );
@@ -256,9 +575,24 @@ class _LoginScreenState extends State<LoginScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Spacer(flex: 5),
-                _enter(order: 0, child: _buildBrandHero(context)),
-                const Spacer(flex: 6),
+                if (desktop) ...[
+                  const Spacer(),
+                  Text(
+                    '로그인',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: CupertinoColors.label.resolveFrom(context),
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                ] else ...[
+                  const Spacer(flex: 5),
+                  _enter(order: 0, child: _buildBrandHero(context)),
+                  const Spacer(flex: 6),
+                ],
                 _enter(
                   order: 1,
                   child: _buildOptionButton(
@@ -277,6 +611,7 @@ class _LoginScreenState extends State<LoginScreen>
                 _enter(order: 3, child: isAndroid ? appleButton : googleButton),
                 const SizedBox(height: 20),
                 _enter(order: 4, child: _buildOtherSocialSection()),
+                if (desktop) const Spacer(),
               ],
             ),
           ),
@@ -379,14 +714,17 @@ class _LoginScreenState extends State<LoginScreen>
       child: SizedBox(
         width: 50,
         height: 50,
-        child: CupertinoButton(
-          padding: EdgeInsets.zero,
-          borderRadius: BorderRadius.circular(25),
-          color: provider.background,
-          onPressed: _isAuthenticating || !enabled
-              ? null
-              : () => _socialLogin(provider.id),
-          child: provider.mark(context),
+        child: ClipOval(
+          child: CupertinoButton(
+            padding: EdgeInsets.zero,
+            borderRadius: BorderRadius.circular(25),
+            color: provider.background,
+            disabledColor: provider.background,
+            onPressed: _isAuthenticating || !enabled
+                ? null
+                : () => _socialLogin(provider.id),
+            child: provider.mark(context),
+          ),
         ),
       ),
     );

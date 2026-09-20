@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
 
 import '../logic/date_utils.dart' as dates;
 import '../models/calendar_event.dart';
@@ -101,6 +103,127 @@ class _MonthAgendaState extends State<MonthAgenda> {
         7;
     return LayoutBuilder(
       builder: (context, constraints) {
+        if (!kIsWeb &&
+            defaultTargetPlatform == TargetPlatform.macOS &&
+            constraints.maxWidth >= 760) {
+          return Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: MonthView(
+                    theme: theme,
+                    viewDate: widget.viewDate,
+                    events: widget.events,
+                    selectedKey: widget.selectedKey,
+                    showHolidays: widget.showHolidays,
+                    holidayNames: widget.holidayNames,
+                    solarTermNames: widget.solarTermNames,
+                    anniversaryNames: widget.anniversaryNames,
+                    showLunar: widget.showLunar,
+                    rowHeight: math.max(
+                      110,
+                      (constraints.maxHeight - 28) / rows,
+                    ),
+                    onSelectDate: widget.onSelectDate,
+                  ),
+                ),
+              ),
+              Container(
+                key: const ValueKey('macos-day-agenda'),
+                width: constraints.maxWidth >= 1000 ? 280 : 230,
+                decoration: BoxDecoration(
+                  color: theme.bg,
+                  border: Border(
+                    left: BorderSide(color: theme.border, width: 0.5),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+                      child: Text(
+                        '${day.month}월 ${day.day}일 ${dates.weekdays[day.weekday % 7]}요일',
+                        style: TextStyle(
+                          color: theme.text,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                      child: Text(
+                        '${widget.showLunar ? '${dates.formatLunarDate(day) ?? ''} · ' : ''}일정 ${events.length}개',
+                        style: TextStyle(color: theme.textMuted, fontSize: 12),
+                      ),
+                    ),
+                    if (holidayName != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          holidayName,
+                          style: TextStyle(color: theme.danger, fontSize: 13),
+                        ),
+                      ),
+                    Divider(height: 1, color: theme.border),
+                    Expanded(
+                      child: events.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.event_available_outlined,
+                                    color: theme.textMuted,
+                                    size: 30,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    '예정된 일정이 없습니다',
+                                    style: TextStyle(
+                                      color: theme.textSecondary,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: events.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 6),
+                              itemBuilder: (context, index) {
+                                final event = events[index];
+                                final special = event.id.startsWith(
+                                  'anniversary:',
+                                );
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 6,
+                                  ),
+                                  child: _AgendaRow(
+                                    theme: theme,
+                                    event: event,
+                                    onTap: special
+                                        ? null
+                                        : () => widget.onEventPress(event),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
         final compactHeight = math.min(
           rows * 51.0 + 28,
           constraints.maxHeight * 0.65,
@@ -233,9 +356,12 @@ class _MonthAgendaState extends State<MonthAgenda> {
                                               ),
                                             ),
                                             if (widget.showLunar &&
-                                                dates.formatLunarDate(day) != null)
+                                                dates.formatLunarDate(day) !=
+                                                    null)
                                               Padding(
-                                                padding: const EdgeInsets.only(left: 8),
+                                                padding: const EdgeInsets.only(
+                                                  left: 8,
+                                                ),
                                                 child: Text(
                                                   dates.formatLunarDate(day)!,
                                                   style: TextStyle(
@@ -249,7 +375,9 @@ class _MonthAgendaState extends State<MonthAgenda> {
                                       ),
                                       if (holidayName?.isNotEmpty == true)
                                         Padding(
-                                          padding: const EdgeInsets.only(right: 8),
+                                          padding: const EdgeInsets.only(
+                                            right: 8,
+                                          ),
                                           child: Text(
                                             holidayName!,
                                             maxLines: 1,
@@ -270,7 +398,9 @@ class _MonthAgendaState extends State<MonthAgenda> {
                                           backgroundColor: theme.bgSecondary,
                                           foregroundColor: theme.textSecondary,
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(8),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
                                         ),
                                         icon: Icon(
@@ -377,7 +507,9 @@ class _AgendaRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SizedBox(
-                  width: 62,
+                  width: defaultTargetPlatform == TargetPlatform.macOS
+                      ? 100 * MediaQuery.textScalerOf(context).scale(12) / 12
+                      : 62,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

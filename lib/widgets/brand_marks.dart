@@ -63,15 +63,7 @@ final List<SocialProviderSpec> socialProviders = [
     id: SocialProvider.apple,
     label: 'Apple',
     background: Colors.black,
-    mark: (context) => Transform.scale(
-      scale: 1.4,
-      child: Image.asset(
-        'assets/login/apple-white.png',
-        width: 24,
-        height: 44,
-        fit: BoxFit.contain,
-      ),
-    ),
+    mark: (context) => const Icon(Icons.apple, color: Colors.white, size: 28),
   ),
   SocialProviderSpec(
     id: SocialProvider.facebook,

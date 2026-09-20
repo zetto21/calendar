@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 class ImportCalendar {
@@ -83,8 +82,8 @@ class AuthService {
   AuthService._();
   static final AuthService instance = AuthService._();
 
-  static const _storage = FlutterSecureStorage();
-  static const _tokenKey = 'calendar_session_token';
+  // Session credentials live only for the lifetime of this app process.
+  String? _sessionToken;
 
   /// Same `http://localhost:3001` default as calendar_app/.env.example.
   /// Override at build/run time with `--dart-define=API_BASE_URL=...` (a LAN
@@ -166,7 +165,7 @@ class AuthService {
     }
     if (response.statusCode >= 500) throw ServerConnectionException();
     if (response.statusCode == 401 && path == '/api/auth/me') {
-      await _storage.delete(key: _tokenKey);
+      _sessionToken = null;
       return parse(null);
     }
     if (response.statusCode == 204) return parse(null);
@@ -200,7 +199,7 @@ class AuthService {
       method: 'POST',
       body: {'email': email.trim(), 'password': password},
     );
-    await _storage.write(key: _tokenKey, value: result.token);
+    _sessionToken = result.token;
     return result.user;
   }
 
@@ -211,7 +210,7 @@ class AuthService {
       _authenticate('/api/auth/register', email, password);
 
   Future<AuthUser?> restoreSession() async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     if (token == null) return null;
     try {
       return await _request(
@@ -222,13 +221,13 @@ class AuthService {
         token: token,
       );
     } catch (_) {
-      // Preserve the token during a temporary network outage, but show login.
+      // Preserve the in-memory session during a temporary network outage.
       return null;
     }
   }
 
   Future<void> logout() async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     try {
       if (token != null) {
         await _request(
@@ -239,7 +238,7 @@ class AuthService {
         );
       }
     } finally {
-      await _storage.delete(key: _tokenKey);
+      _sessionToken = null;
     }
   }
 
@@ -295,7 +294,7 @@ class AuthService {
       method: 'POST',
       body: {'code': code},
     );
-    await _storage.write(key: _tokenKey, value: result.token);
+    _sessionToken = result.token;
     return result.user;
   }
 
@@ -303,7 +302,7 @@ class AuthService {
     String userId,
     List<Map<String, dynamic>> changes,
   ) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     if (token == null) throw AuthException('로그인이 필요합니다.');
     return _request(
       '/api/events/sync?user=${Uri.encodeQueryComponent(userId)}',
@@ -318,7 +317,7 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> loadSettings(String userId) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     if (token == null) throw AuthException('로그인이 필요합니다.');
     return _request(
       '/api/settings?user=${Uri.encodeQueryComponent(userId)}',
@@ -329,7 +328,7 @@ class AuthService {
   }
 
   Future<void> saveSettings(String userId, Map<String, dynamic> values) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     if (token == null) throw AuthException('로그인이 필요합니다.');
     await _request(
       '/api/settings?user=${Uri.encodeQueryComponent(userId)}',
@@ -342,7 +341,7 @@ class AuthService {
   }
 
   Future<String> calendarImportStart(String provider) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     if (token == null) throw AuthException('로그인이 필요합니다.');
     return _request(
       '/api/calendar-import/$provider/connect',
@@ -353,7 +352,7 @@ class AuthService {
   }
 
   Future<List<ImportCalendar>> importCalendars(String provider) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     if (token == null) throw AuthException('로그인이 필요합니다.');
     return _request(
       '/api/calendar-import/$provider/calendars',
@@ -373,7 +372,7 @@ class AuthService {
     DateTime from,
     DateTime to,
   ) async {
-    final token = await _storage.read(key: _tokenKey);
+    final token = _sessionToken;
     if (token == null) throw AuthException('로그인이 필요합니다.');
     final query = Uri(
       queryParameters: {

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/rendering.dart' show debugPaintBaselinesEnabled;
@@ -18,6 +20,7 @@ import 'logic/recurrence.dart';
 import 'models/calendar_event.dart';
 import 'native/eventkit.dart';
 import 'native/live_activity.dart';
+import 'native/macos_window.dart';
 import 'screens/event_sheet.dart';
 import 'screens/list_view.dart';
 import 'screens/login_screen.dart';
@@ -36,6 +39,7 @@ import 'theme/app_theme.dart';
 import 'screens/month_agenda.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/top_bar.dart';
+import 'widgets/macos_calendar_shell.dart';
 import 'widgets/liquid_glass.dart';
 import 'widgets/server_connection_monitor.dart';
 
@@ -118,6 +122,7 @@ class _AuthGateState extends State<AuthGate> {
     // Do not block the first screen on an API request. A disconnected server
     // must show the login screen and its connection alert immediately.
     _loading = false;
+    unawaited(MacosWindow.showCalendar(false));
     AuthService.instance.restoreSession().then((user) {
       if (mounted && _authGeneration == 0 && user != null) {
         _acceptUser(user);
@@ -136,6 +141,8 @@ class _AuthGateState extends State<AuthGate> {
     await AccountPreferences.instance.sync();
     await DisplaySettings.instance.load();
     await imports.load();
+    if (!mounted || generation != _authGeneration) return;
+    await MacosWindow.showCalendar(user != null || guest);
     if (!mounted || generation != _authGeneration) return;
     setState(() {
       _user = user;
@@ -207,6 +214,7 @@ class _CalendarHomeState extends State<CalendarHome>
     with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   ViewMode _view = ViewMode.month;
+  bool _showPersonalCalendar = true;
   DateTime _anchorDate = DateTime.now();
   String _selectedKey = date_utils.toDateKey(DateTime.now());
   bool _showHolidays = DisplaySettings.instance.enabled(
@@ -1134,32 +1142,42 @@ class _CalendarHomeState extends State<CalendarHome>
             ),
           ),
           Align(
-            alignment: Alignment.bottomCenter,
-            child: Material(
-              color: Colors.transparent,
-              child: EventSheet(
-                theme: Theme.of(context).brightness == Brightness.dark
-                    ? darkTheme
-                    : lightTheme,
-                draft: draft,
-                isEditing: draft != null,
-                initialDate: date,
-                initialTime: time,
-                onSave: (event) async {
-                  await onBeforeSave?.call();
-                  final saved = await store.saveEvent(event);
-                  if (syncToSystem) await _syncToEventKit(store, saved);
-                  await _refreshLiveActivity();
-                  if (dialogContext.mounted) Navigator.pop(dialogContext);
-                },
-                onDelete: onDelete == null
-                    ? null
-                    : () async {
-                        await onDelete();
-                        if (dialogContext.mounted) {
-                          Navigator.pop(dialogContext);
-                        }
-                      },
+            alignment: !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
+                ? Alignment.center
+                : Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth:
+                    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
+                    ? 580
+                    : double.infinity,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: EventSheet(
+                  theme: Theme.of(context).brightness == Brightness.dark
+                      ? darkTheme
+                      : lightTheme,
+                  draft: draft,
+                  isEditing: draft != null,
+                  initialDate: date,
+                  initialTime: time,
+                  onSave: (event) async {
+                    await onBeforeSave?.call();
+                    final saved = await store.saveEvent(event);
+                    if (syncToSystem) await _syncToEventKit(store, saved);
+                    await _refreshLiveActivity();
+                    if (dialogContext.mounted) Navigator.pop(dialogContext);
+                  },
+                  onDelete: onDelete == null
+                      ? null
+                      : () async {
+                          await onDelete();
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext);
+                          }
+                        },
+                ),
               ),
             ),
           ),
@@ -1182,6 +1200,25 @@ class _CalendarHomeState extends State<CalendarHome>
     }
   }
 
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(
+          theme: Theme.of(context).brightness == Brightness.dark
+              ? darkTheme
+              : lightTheme,
+          accountLabel: widget.user?.email ?? '게스트',
+          onLogout: widget.onLogout,
+          onBackup: _backupData,
+          onRestore: _restoreData,
+          onLiveActivities: LiveActivity.isSupportedPlatform
+              ? _showLiveActivities
+              : null,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context).brightness == Brightness.dark
@@ -1191,7 +1228,14 @@ class _CalendarHomeState extends State<CalendarHome>
     final imported = context.watch<ImportedEvents>();
     final (from, to) = _range;
     final expanded = expandEvents(
-      _combineEvents(store.events, imported.events),
+      _combineEvents(
+        !kIsWeb &&
+                defaultTargetPlatform == TargetPlatform.macOS &&
+                !_showPersonalCalendar
+            ? const {}
+            : store.events,
+        imported.events,
+      ),
       from,
       to,
       widget.deviceZone,
@@ -1235,99 +1279,200 @@ class _CalendarHomeState extends State<CalendarHome>
         onManageCalendars: _showCalendarConnections,
         onSettings: () {
           _scaffoldKey.currentState?.closeDrawer();
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => SettingsScreen(
-                theme: theme,
-                accountLabel: widget.user?.email ?? '게스트',
-                onLogout: widget.onLogout,
-                onBackup: _backupData,
-                onRestore: _restoreData,
-                onLiveActivities: LiveActivity.isSupportedPlatform
-                    ? _showLiveActivities
-                    : null,
-              ),
-            ),
-          );
+          _openSettings();
         },
       ),
       body: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            TopBar(
-              theme: theme,
-              title: _title,
-              selectedDate: _anchorDate,
-              onPrev: _goPrev,
-              onNext: _goNext,
-              onToday: _goToday,
-              onDateSelected: (date) {
-                setState(() {
-                  _anchorDate = date;
-                  _selectedKey = date_utils.toDateKey(date);
-                });
-                _refreshHolidays();
-              },
-              onMenu: () {
-                _collapseAgenda();
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _scaffoldKey.currentState?.openDrawer();
-                });
-              },
-              onSearch: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => SearchScreen(
-                    rangeFrom: from,
-                    rangeTo: to,
-                    deviceZone: widget.deviceZone,
-                    onEventPress: _openEdit,
+        child: !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
+            ? MacosCalendarShell(
+                theme: theme,
+                title: _title,
+                account: widget.user?.email ?? '게스트',
+                selectedDate: _anchorDate,
+                onDateSelected: (date) {
+                  setState(() {
+                    _anchorDate = date;
+                    _selectedKey = date_utils.toDateKey(date);
+                  });
+                  _refreshHolidays();
+                },
+                onConnect: _showCalendarConnections,
+                onSettings: _openSettings,
+                calendarControls: [
+                  CheckboxListTile(
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: theme.accent,
+                    title: const Text('내 캘린더', style: TextStyle(fontSize: 13)),
+                    value: _showPersonalCalendar,
+                    onChanged: (value) =>
+                        setState(() => _showPersonalCalendar = value!),
+                  ),
+                  CheckboxListTile(
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: const Color(0xFFFF604E),
+                    title: const Text(
+                      '대한민국 공휴일',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    value: _showHolidays,
+                    onChanged: (value) => _setDisplaySetting(
+                      DisplaySetting.holidays,
+                      value!,
+                      () => _showHolidays = value,
+                    ),
+                  ),
+                  CheckboxListTile(
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: const Color(0xFFAA50C0),
+                    title: const Text('법정 기념일', style: TextStyle(fontSize: 13)),
+                    value: _showAnniversaries,
+                    onChanged: (value) => _setDisplaySetting(
+                      DisplaySetting.anniversaries,
+                      value!,
+                      () => _showAnniversaries = value,
+                    ),
+                  ),
+                  CheckboxListTile(
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: const Text('음력 표시', style: TextStyle(fontSize: 13)),
+                    value: _showLunar,
+                    onChanged: (value) => _setDisplaySetting(
+                      DisplaySetting.lunar,
+                      value!,
+                      () => _showLunar = value,
+                    ),
+                  ),
+                  for (final source in imported.sources.entries)
+                    for (final calendar in source.value)
+                      CheckboxListTile(
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        activeColor: colorFromHex(calendar.color),
+                        title: Text(
+                          calendar.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        value: imported.isVisible(source.key, calendar.id),
+                        onChanged: (value) => imported.setVisible(
+                          source.key,
+                          calendar.id,
+                          value!,
+                        ),
+                      ),
+                ],
+                view: _view,
+                onViewChanged: (view) => setState(() => _view = view),
+                onPrevious: _goPrev,
+                onNext: _goNext,
+                onToday: _goToday,
+                onCreate: () => _openCreate(
+                  _view == ViewMode.month
+                      ? date_utils.parseDateKey(_selectedKey)
+                      : _anchorDate,
+                ),
+                onManage: () => _scaffoldKey.currentState?.openDrawer(),
+                onSearch: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SearchScreen(
+                      rangeFrom: from,
+                      rangeTo: to,
+                      deviceZone: widget.deviceZone,
+                      onEventPress: _openEdit,
+                    ),
                   ),
                 ),
-              ),
-              view: _view,
-              onViewChanged: (view) => setState(() => _view = view),
-            ),
-            Expanded(
-              child: !store.loaded
-                  ? Center(
-                      child: Text(
-                        '일정을 불러오고 있습니다…',
-                        style: TextStyle(color: theme.textMuted),
+                child: store.loaded
+                    ? _buildView(theme, expanded)
+                    : const Center(child: CupertinoActivityIndicator()),
+              )
+            : Column(
+                children: [
+                  TopBar(
+                    theme: theme,
+                    title: _title,
+                    selectedDate: _anchorDate,
+                    onPrev: _goPrev,
+                    onNext: _goNext,
+                    onToday: _goToday,
+                    onDateSelected: (date) {
+                      setState(() {
+                        _anchorDate = date;
+                        _selectedKey = date_utils.toDateKey(date);
+                      });
+                      _refreshHolidays();
+                    },
+                    onMenu: () {
+                      _collapseAgenda();
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _scaffoldKey.currentState?.openDrawer();
+                      });
+                    },
+                    onSearch: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SearchScreen(
+                          rangeFrom: from,
+                          rangeTo: to,
+                          deviceZone: widget.deviceZone,
+                          onEventPress: _openEdit,
+                        ),
                       ),
-                    )
-                  : Stack(
-                      children: [
-                        Positioned.fill(child: _buildView(theme, expanded)),
-                        Positioned(
-                          right: 20,
-                          bottom: MediaQuery.viewPaddingOf(context).bottom + 24,
-                          child: SizedBox(
-                            width: 48,
-                            height: 48,
-                            child: LiquidGlass(
-                              radius: 24,
-                              child: IconButton(
-                                tooltip: '일정 추가',
-                                onPressed: () => _openCreate(
-                                  _view == ViewMode.month
-                                      ? date_utils.parseDateKey(_selectedKey)
-                                      : _anchorDate,
-                                ),
-                                icon: Icon(
-                                  Icons.add,
-                                  color: theme.text,
-                                  size: 26,
+                    ),
+                    view: _view,
+                    onViewChanged: (view) => setState(() => _view = view),
+                  ),
+                  Expanded(
+                    child: !store.loaded
+                        ? Center(
+                            child: Text(
+                              '일정을 불러오고 있습니다…',
+                              style: TextStyle(color: theme.textMuted),
+                            ),
+                          )
+                        : Stack(
+                            children: [
+                              Positioned.fill(
+                                child: _buildView(theme, expanded),
+                              ),
+                              Positioned(
+                                right: 20,
+                                bottom:
+                                    MediaQuery.viewPaddingOf(context).bottom +
+                                    24,
+                                child: SizedBox(
+                                  width: 48,
+                                  height: 48,
+                                  child: LiquidGlass(
+                                    radius: 24,
+                                    child: IconButton(
+                                      tooltip: '일정 추가',
+                                      onPressed: () => _openCreate(
+                                        _view == ViewMode.month
+                                            ? date_utils.parseDateKey(
+                                                _selectedKey,
+                                              )
+                                            : _anchorDate,
+                                      ),
+                                      icon: Icon(
+                                        Icons.add,
+                                        color: theme.text,
+                                        size: 26,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
-        ),
+                  ),
+                ],
+              ),
       ),
     );
   }
