@@ -18,6 +18,12 @@ class TimeGridView extends StatefulWidget {
   final EventMap events;
   final void Function(DateTime date, int hour) onSlotPress;
   final ValueChanged<CalendarEvent> onEventPress;
+  final void Function(CalendarEvent event, DateTime date, String? time)?
+  onEventMove;
+  final void Function(CalendarEvent event, int duration)? onEventResize;
+  final ValueChanged<CalendarEvent?>? onEventHover;
+  final DateTime? selectedDate;
+  final int? selectedHour;
 
   const TimeGridView({
     super.key,
@@ -27,6 +33,11 @@ class TimeGridView extends StatefulWidget {
     required this.events,
     required this.onSlotPress,
     required this.onEventPress,
+    this.onEventMove,
+    this.onEventResize,
+    this.onEventHover,
+    this.selectedDate,
+    this.selectedHour,
   });
 
   @override
@@ -56,15 +67,69 @@ class _TimeGridViewState extends State<TimeGridView> {
   }
 
   @override
+  void didUpdateWidget(TimeGridView old) {
+    super.didUpdateWidget(old);
+    final hour = widget.selectedHour;
+    if (hour == null || hour == old.selectedHour) return;
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final top = _hourHeight * hour;
+    final visibleTop = position.pixels;
+    final visibleBottom = visibleTop + position.viewportDimension - 120;
+    if (top < visibleTop) {
+      _scrollController.animateTo(
+        top.clamp(0, position.maxScrollExtent),
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    } else if (top + _hourHeight > visibleBottom) {
+      _scrollController.animateTo(
+        (top + _hourHeight - position.viewportDimension + 120).clamp(
+          0,
+          position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
   void dispose() {
     _clock?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
+  Widget _draggableAllDay(CalendarEvent e) {
+    final chip = _AllDayChip(
+      theme: widget.theme,
+      event: e,
+      onTap: () => widget.onEventPress(e),
+    );
+    if (widget.onEventMove == null || !isMovableEvent(e)) return chip;
+    return MouseRegion(
+      onEnter: (_) => widget.onEventHover?.call(e),
+      onExit: (_) => widget.onEventHover?.call(null),
+      child: Draggable<CalendarEvent>(
+        data: e,
+        feedback: Material(
+          color: Colors.transparent,
+          child: SizedBox(width: 140, child: chip),
+        ),
+        childWhenDragging: Opacity(opacity: 0.35, child: chip),
+        child: chip,
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) =>
+        _buildGrid(context, constraints.maxWidth),
+  );
+
+  Widget _buildGrid(BuildContext context, double width) {
     final colWidth = (width - _labelWidth) / widget.days.length;
     final allDayByDate = widget.days
         .map(
@@ -146,21 +211,26 @@ class _TimeGridViewState extends State<TimeGridView> {
                   ),
                 ),
                 for (var i = 0; i < widget.days.length; i++)
-                  SizedBox(
-                    width: colWidth,
-                    child: Padding(
+                  DragTarget<CalendarEvent>(
+                    onWillAcceptWithDetails: (details) =>
+                        widget.onEventMove != null &&
+                        details.data.time == null &&
+                        details.data.date !=
+                            date_utils.toDateKey(widget.days[i]),
+                    onAcceptWithDetails: (details) =>
+                        widget.onEventMove!(details.data, widget.days[i], null),
+                    builder: (context, candidates, _) => Container(
+                      width: colWidth,
+                      color: candidates.isNotEmpty
+                          ? widget.theme.accent.withValues(alpha: 0.12)
+                          : null,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 4,
                         vertical: 6,
                       ),
                       child: Column(
                         children: [
-                          for (final e in allDayByDate[i])
-                            _AllDayChip(
-                              theme: widget.theme,
-                              event: e,
-                              onTap: () => widget.onEventPress(e),
-                            ),
+                          for (final e in allDayByDate[i]) _draggableAllDay(e),
                         ],
                       ),
                     ),
@@ -211,6 +281,14 @@ class _TimeGridViewState extends State<TimeGridView> {
                       events: widget.events,
                       onSlotPress: widget.onSlotPress,
                       onEventPress: widget.onEventPress,
+                      onEventMove: widget.onEventMove,
+                      onEventResize: widget.onEventResize,
+                      onEventHover: widget.onEventHover,
+                      selectedHour:
+                          widget.selectedDate != null &&
+                              date_utils.isSameDay(d, widget.selectedDate!)
+                          ? widget.selectedHour
+                          : null,
                     ),
                 ],
               ),
@@ -273,7 +351,7 @@ class _AllDayChip extends StatelessWidget {
   }
 }
 
-class _DayColumn extends StatelessWidget {
+class _DayColumn extends StatefulWidget {
   final AppTheme theme;
   final DateTime day;
   final double width;
@@ -281,6 +359,11 @@ class _DayColumn extends StatelessWidget {
   final EventMap events;
   final void Function(DateTime date, int hour) onSlotPress;
   final ValueChanged<CalendarEvent> onEventPress;
+  final void Function(CalendarEvent event, DateTime date, String? time)?
+  onEventMove;
+  final void Function(CalendarEvent event, int duration)? onEventResize;
+  final ValueChanged<CalendarEvent?>? onEventHover;
+  final int? selectedHour;
 
   const _DayColumn({
     required this.theme,
@@ -290,113 +373,226 @@ class _DayColumn extends StatelessWidget {
     required this.events,
     required this.onSlotPress,
     required this.onEventPress,
+    this.onEventMove,
+    this.onEventResize,
+    this.onEventHover,
+    this.selectedHour,
   });
 
   @override
+  State<_DayColumn> createState() => _DayColumnState();
+}
+
+class _DayColumnState extends State<_DayColumn> {
+  final _columnKey = GlobalKey();
+
+  /// Snap a dropped block's top edge to 15-minute steps.
+  String _timeAt(Offset globalTopLeft) {
+    final box = _columnKey.currentContext!.findRenderObject() as RenderBox;
+    final y = box.globalToLocal(globalTopLeft).dy;
+    final minutes = ((y / _hourHeight * 60) / 15).round() * 15;
+    return date_utils.timeFromMinutes(minutes.clamp(0, 24 * 60 - 15));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = widget.theme;
+    final day = widget.day;
     final dateKey = date_utils.toDateKey(day);
-    final timedEvents = (events[dateKey] ?? const <CalendarEvent>[])
+    final timedEvents = (widget.events[dateKey] ?? const <CalendarEvent>[])
         .where((e) => e.time != null)
         .toList();
-    final isToday = date_utils.isSameDay(day, now);
-    final nowMinutes = now.hour * 60 + now.minute;
+    final isToday = date_utils.isSameDay(day, widget.now);
+    final nowMinutes = widget.now.hour * 60 + widget.now.minute;
 
-    return SizedBox(
-      width: width,
-      child: Stack(
-        children: [
-          Column(
-            children: [
-              for (final h in date_utils.hoursOfDay)
-                InkWell(
-                  onTap: () => onSlotPress(day, h),
-                  child: Container(
-                    height: _hourHeight,
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: theme.border, width: 0.5),
+    return DragTarget<CalendarEvent>(
+      onWillAcceptWithDetails: (details) => widget.onEventMove != null,
+      onAcceptWithDetails: (details) {
+        if (details.data.time == null) return;
+        widget.onEventMove!(details.data, day, _timeAt(details.offset));
+      },
+      builder: (context, candidates, _) => SizedBox(
+        key: _columnKey,
+        width: widget.width,
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                for (final h in date_utils.hoursOfDay)
+                  InkWell(
+                    onTap: () => widget.onSlotPress(day, h),
+                    child: Container(
+                      height: _hourHeight,
+                      decoration: BoxDecoration(
+                        color: widget.selectedHour == h
+                            ? theme.accent.withValues(alpha: 0.12)
+                            : (candidates.isNotEmpty
+                                  ? theme.accent.withValues(alpha: 0.04)
+                                  : null),
+                        border: Border(
+                          top: BorderSide(color: theme.border, width: 0.5),
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
-          for (final e in timedEvents)
-            _EventBlock(theme: theme, event: e, onTap: () => onEventPress(e)),
-          if (isToday)
-            Positioned(
-              top: (nowMinutes / 60) * _hourHeight,
-              left: 0,
-              right: 0,
-              child: Container(height: 1.5, color: theme.danger),
+              ],
             ),
-        ],
+            for (final e in timedEvents)
+              _EventBlock(
+                theme: theme,
+                event: e,
+                onTap: () => widget.onEventPress(e),
+                movable: widget.onEventMove != null && isMovableEvent(e),
+                onResize: widget.onEventResize == null
+                    ? null
+                    : (duration) => widget.onEventResize!(e, duration),
+                onHover: widget.onEventHover,
+              ),
+            if (isToday)
+              Positioned(
+                top: (nowMinutes / 60) * _hourHeight,
+                left: 0,
+                right: 0,
+                child: Container(height: 1.5, color: theme.danger),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _EventBlock extends StatelessWidget {
+class _EventBlock extends StatefulWidget {
   final AppTheme theme;
   final CalendarEvent event;
   final VoidCallback onTap;
+  final bool movable;
+  final ValueChanged<int>? onResize;
+  final ValueChanged<CalendarEvent?>? onHover;
   const _EventBlock({
     required this.theme,
     required this.event,
     required this.onTap,
+    this.movable = false,
+    this.onResize,
+    this.onHover,
   });
 
   @override
+  State<_EventBlock> createState() => _EventBlockState();
+}
+
+class _EventBlockState extends State<_EventBlock> {
+  /// Pixels the bottom edge has been dragged while resizing.
+  double _resizePx = 0;
+
+  int get _duration => (widget.event.duration + _resizePx / _hourHeight * 60)
+      .round()
+      .clamp(15, 24 * 60);
+
+  Widget _body(double height, {double? width}) {
+    final event = widget.event;
+    final tone = eventCardTone(colorFromHex(event.color), widget.theme);
+    return Container(
+      width: width,
+      padding: EdgeInsets.symmetric(
+        horizontal: 6,
+        vertical: height < 30 ? 2 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: tone.background,
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            event.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: tone.title,
+            ),
+          ),
+          if (height > 38 &&
+              event.location != null &&
+              event.location!.isNotEmpty)
+            Text(
+              event.location!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: tone.detail),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final tone = eventCardTone(colorFromHex(event.color), theme);
+    final event = widget.event;
     final startMin = date_utils.minutesFromTime(event.time!);
     final top = (startMin / 60) * _hourHeight;
-    final height = ((event.duration / 60) * _hourHeight).clamp(
-      22,
-      double.infinity,
-    );
+    final height = (((_duration) / 60) * _hourHeight)
+        .clamp(22, double.infinity)
+        .toDouble();
+    Widget content = InkWell(onTap: widget.onTap, child: _body(height));
+    if (widget.movable) {
+      content = MouseRegion(
+        cursor: SystemMouseCursors.grab,
+        onEnter: (_) => widget.onHover?.call(event),
+        onExit: (_) => widget.onHover?.call(null),
+        child: Draggable<CalendarEvent>(
+          data: event,
+          feedback: Material(
+            color: Colors.transparent,
+            child: Opacity(
+              opacity: 0.85,
+              child: SizedBox(
+                width: 140,
+                height: height,
+                child: _body(height, width: 140),
+              ),
+            ),
+          ),
+          childWhenDragging: Opacity(opacity: 0.35, child: content),
+          child: content,
+        ),
+      );
+    }
     return Positioned(
       top: top,
       left: 2,
       right: 12,
-      height: height.toDouble(),
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: 6,
-            vertical: height < 30 ? 2 : 6,
-          ),
-          decoration: BoxDecoration(
-            color: tone.background,
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                event.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: tone.title,
+      height: height,
+      child: Stack(
+        children: [
+          Positioned.fill(child: content),
+          if (widget.movable && widget.onResize != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 8,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeUpDown,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (d) =>
+                      setState(() => _resizePx += d.delta.dy),
+                  onVerticalDragEnd: (_) {
+                    final snapped = (_duration / 15).round() * 15;
+                    setState(() => _resizePx = 0);
+                    widget.onResize!(snapped.clamp(15, 24 * 60));
+                  },
+                  onVerticalDragCancel: () => setState(() => _resizePx = 0),
                 ),
               ),
-              if (height > 38 &&
-                  event.location != null &&
-                  event.location!.isNotEmpty)
-                Text(
-                  event.location!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: tone.detail),
-                ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }

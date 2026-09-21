@@ -20,6 +20,8 @@ class MonthView extends StatelessWidget {
   final ValueChanged<String> onSelectDate;
   final bool compact;
   final double rowHeight;
+  final void Function(CalendarEvent event, DateTime date)? onEventMove;
+  final ValueChanged<CalendarEvent?>? onEventHover;
 
   const MonthView({
     super.key,
@@ -35,6 +37,8 @@ class MonthView extends StatelessWidget {
     required this.onSelectDate,
     this.compact = false,
     this.rowHeight = 108,
+    this.onEventMove,
+    this.onEventHover,
   });
 
   @override
@@ -89,6 +93,8 @@ class MonthView extends StatelessWidget {
                 showLunar: showLunar,
                 onSelectDate: onSelectDate,
                 compact: compact,
+                onEventMove: onEventMove,
+                onEventHover: onEventHover,
               ),
           ],
         ),
@@ -110,6 +116,8 @@ class _MonthCell extends StatelessWidget {
   final bool showLunar;
   final ValueChanged<String> onSelectDate;
   final bool compact;
+  final void Function(CalendarEvent event, DateTime date)? onEventMove;
+  final ValueChanged<CalendarEvent?>? onEventHover;
 
   const _MonthCell({
     required this.theme,
@@ -124,7 +132,43 @@ class _MonthCell extends StatelessWidget {
     required this.showLunar,
     required this.onSelectDate,
     required this.compact,
+    this.onEventMove,
+    this.onEventHover,
   });
+
+  Widget _draggableChip(CalendarEvent event, double height, Widget chip) {
+    if (onEventMove == null || !isMovableEvent(event)) return chip;
+    return MouseRegion(
+      onEnter: (_) => onEventHover?.call(event),
+      onExit: (_) => onEventHover?.call(null),
+      cursor: SystemMouseCursors.grab,
+      child: Draggable<CalendarEvent>(
+        data: event,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Container(
+            height: height - 4,
+            constraints: const BoxConstraints(maxWidth: 160),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            alignment: Alignment.centerLeft,
+            decoration: BoxDecoration(
+              color: colorFromHex(event.color).withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Text(
+              event.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: Colors.white),
+            ),
+          ),
+        ),
+        childWhenDragging: Opacity(opacity: 0.35, child: chip),
+        child: chip,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -169,146 +213,162 @@ class _MonthCell extends StatelessWidget {
     final weekday = cell.date.weekday % 7;
 
     if (desktop && !compact) {
-      return InkWell(
-        onTap: () => onSelectDate(key),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isSelected ? theme.bgSecondary : theme.bg,
-            border: Border(
-              top: BorderSide(color: theme.border, width: 0.5),
-              right: BorderSide(color: theme.border, width: 0.5),
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(5, 6, 5, 3),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 25,
-                    height: 25,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isToday
-                          ? theme.text
-                          : (isSelected ? theme.border : null),
-                    ),
-                    child: Text(
-                      '${cell.date.day}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isToday
-                            ? theme.bg
-                            : (weekday == 0 || (showHolidays && holiday != null)
-                                      ? const Color(0xFFFF526F)
-                                      : weekday == 6
-                                      ? const Color(0xFF7C85FF)
-                                      : theme.text)
-                                  .withValues(alpha: opacity),
-                      ),
-                    ),
-                  ),
-                  if (showLunar)
-                    Expanded(
-                      child: Text(
-                        date_utils
-                                .formatLunarDate(cell.date)
-                                ?.replaceFirst('음력 ', '음 ') ??
-                            '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: theme.textMuted, fontSize: 10),
-                      ),
-                    ),
-                ],
+      return DragTarget<CalendarEvent>(
+        onWillAcceptWithDetails: (details) =>
+            onEventMove != null && details.data.date != key,
+        onAcceptWithDetails: (details) => onEventMove!(details.data, cell.date),
+        builder: (context, candidates, _) => InkWell(
+          onTap: () => onSelectDate(key),
+          child: Container(
+            decoration: BoxDecoration(
+              color: candidates.isNotEmpty
+                  ? theme.accent.withValues(alpha: 0.14)
+                  : (isSelected ? theme.bgSecondary : theme.bg),
+              border: Border(
+                top: BorderSide(color: theme.border, width: 0.5),
+                right: BorderSide(color: theme.border, width: 0.5),
               ),
-              const SizedBox(height: 3),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final eventHeight =
-                        14 + MediaQuery.textScalerOf(context).scale(12);
-                    final slots = (constraints.maxHeight / eventHeight)
-                        .floor()
-                        .clamp(0, 20);
-                    final overflow = dayEvents.length > slots;
-                    final visible = overflow ? (slots - 1).clamp(0, 20) : slots;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final event in dayEvents.take(visible))
-                          Tooltip(
-                            message:
-                                '${event.title} · ${event.time == null ? '종일' : date_utils.formatTimeLabel(event.time!)}',
-                            child: Container(
-                              height: eventHeight - 4,
-                              width: double.infinity,
-                              margin: const EdgeInsets.only(bottom: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              alignment: Alignment.centerLeft,
-                              decoration: BoxDecoration(
-                                color: event.time != null
-                                    ? Colors.transparent
-                                    : withAlpha(
-                                        colorFromHex(event.color),
-                                        (event.id.startsWith(
-                                                  'anniversary:$key:',
-                                                )
-                                                ? 0.20
-                                                : 0.12) *
-                                            opacity,
-                                      ),
-                                borderRadius: BorderRadius.circular(5),
-                                border: isSpecialDay(event)
-                                    ? null
-                                    : Border(
-                                        left: BorderSide(
-                                          color: withAlpha(
+            ),
+            padding: const EdgeInsets.fromLTRB(5, 6, 5, 3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 25,
+                      height: 25,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isToday
+                            ? theme.text
+                            : (isSelected ? theme.border : null),
+                      ),
+                      child: Text(
+                        '${cell.date.day}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isToday
+                              ? theme.bg
+                              : (weekday == 0 || holiday != null
+                                        ? const Color(0xFFFF526F)
+                                        : weekday == 6
+                                        ? const Color(0xFF7C85FF)
+                                        : theme.text)
+                                    .withValues(alpha: opacity),
+                        ),
+                      ),
+                    ),
+                    if (showLunar)
+                      Expanded(
+                        child: Text(
+                          date_utils
+                                  .formatLunarDate(cell.date)
+                                  ?.replaceFirst('음력 ', '음 ') ??
+                              '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            color: theme.textMuted,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final eventHeight =
+                          14 + MediaQuery.textScalerOf(context).scale(12);
+                      final slots = (constraints.maxHeight / eventHeight)
+                          .floor()
+                          .clamp(0, 20);
+                      final overflow = dayEvents.length > slots;
+                      final visible = overflow
+                          ? (slots - 1).clamp(0, 20)
+                          : slots;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final event in dayEvents.take(visible))
+                            _draggableChip(
+                              event,
+                              eventHeight,
+                              Tooltip(
+                                message:
+                                    '${event.title} · ${event.time == null ? '종일' : date_utils.formatTimeLabel(event.time!)}',
+                                child: Container(
+                                  height: eventHeight - 4,
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                  ),
+                                  alignment: Alignment.centerLeft,
+                                  decoration: BoxDecoration(
+                                    color: event.time != null
+                                        ? Colors.transparent
+                                        : withAlpha(
                                             colorFromHex(event.color),
-                                            0.6 * opacity,
+                                            (event.id.startsWith(
+                                                      'anniversary:$key:',
+                                                    )
+                                                    ? 0.20
+                                                    : 0.12) *
+                                                opacity,
                                           ),
-                                          width: 3,
-                                        ),
-                                      ),
-                              ),
-                              child: Text(
-                                event.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color:
-                                      (isSpecialDay(event)
-                                              ? colorFromHex(event.color)
-                                              : theme.text)
-                                          .withValues(alpha: opacity),
+                                    borderRadius: BorderRadius.circular(5),
+                                    border: isSpecialDay(event)
+                                        ? null
+                                        : Border(
+                                            left: BorderSide(
+                                              color: withAlpha(
+                                                colorFromHex(event.color),
+                                                0.6 * opacity,
+                                              ),
+                                              width: 3,
+                                            ),
+                                          ),
+                                  ),
+                                  child: Text(
+                                    event.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color:
+                                          (isSpecialDay(event)
+                                                  ? colorFromHex(event.color)
+                                                  : theme.text)
+                                              .withValues(alpha: opacity),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        if (overflow && slots > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: Text(
-                              '+${dayEvents.length - visible}개 더',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: theme.textMuted,
+                          if (overflow && slots > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Text(
+                                '+${dayEvents.length - visible}개 더',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: theme.textMuted,
+                                ),
                               ),
                             ),
-                          ),
-                      ],
-                    );
-                  },
+                        ],
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );

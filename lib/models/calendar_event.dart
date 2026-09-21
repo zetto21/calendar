@@ -165,3 +165,10 @@ class CalendarEvent {
 typedef EventMap = Map<String, List<CalendarEvent>>;
 
 enum ViewMode { day, week, month, list }
+
+/// Holidays, solar terms, anniversaries and imported events are read-only.
+bool isMovableEvent(CalendarEvent event) =>
+    !event.id.startsWith('holiday:') &&
+    !event.id.startsWith('solarTerm:') &&
+    !event.id.startsWith('anniversary:') &&
+    !event.id.startsWith('import:');

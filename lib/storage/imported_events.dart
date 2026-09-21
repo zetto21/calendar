@@ -39,6 +39,8 @@ class ImportedEvents extends ChangeNotifier {
     try {
       final saved = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       for (final entry in saved.entries) {
+        // 톡캘린더 연동은 제거되어, 저장된 목록도 불러오지 않는다.
+        if (entry.key == 'kakao') continue;
         _sources[entry.key] = (entry.value as List)
             .map(
               (value) => ImportCalendar.fromJson(

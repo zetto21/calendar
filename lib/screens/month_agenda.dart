@@ -28,6 +28,8 @@ class MonthAgenda extends StatefulWidget {
   final ValueChanged<CalendarEvent> onEventPress;
   final void Function(DateTime, int) onSlotPress;
   final ValueChanged<VoidCallback>? onCollapseReady;
+  final void Function(CalendarEvent event, DateTime date)? onEventMove;
+  final ValueChanged<CalendarEvent?>? onEventHover;
   const MonthAgenda({
     super.key,
     required this.theme,
@@ -45,6 +47,8 @@ class MonthAgenda extends StatefulWidget {
     required this.onEventPress,
     required this.onSlotPress,
     this.onCollapseReady,
+    this.onEventMove,
+    this.onEventHover,
   });
 
   @override
@@ -125,6 +129,8 @@ class _MonthAgendaState extends State<MonthAgenda> {
                       (constraints.maxHeight - 28) / rows,
                     ),
                     onSelectDate: widget.onSelectDate,
+                    onEventMove: widget.onEventMove,
+                    onEventHover: widget.onEventHover,
                   ),
                 ),
               ),

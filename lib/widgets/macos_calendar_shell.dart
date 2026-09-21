@@ -12,6 +12,7 @@ class MacosCalendarShell extends StatelessWidget {
     required this.theme,
     required this.title,
     required this.account,
+    this.userName = '',
     required this.view,
     required this.onViewChanged,
     required this.onPrevious,
@@ -30,7 +31,7 @@ class MacosCalendarShell extends StatelessWidget {
     this.onSettings,
   });
   final AppTheme theme;
-  final String title, account;
+  final String title, account, userName;
   final ViewMode view;
   final ValueChanged<ViewMode> onViewChanged;
   final VoidCallback onPrevious, onNext, onToday, onCreate, onSearch, onManage;
@@ -179,7 +180,8 @@ class MacosCalendarShell extends StatelessWidget {
             Semantics(
               selected: view == mode,
               child: Tooltip(
-                message: labels[mode]!,
+                message:
+                    '${labels[mode]!} · ⌘${labels.keys.toList().indexOf(mode) + 1}',
                 child: InkWell(
                   borderRadius: BorderRadius.circular(5),
                   onTap: () => onViewChanged(mode),
@@ -231,7 +233,9 @@ class MacosCalendarShell extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '캘린더',
+                      userName.isEmpty ? '캘린더' : '$userName의 캘린더',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: theme.text,
                         fontSize: 16,
@@ -348,6 +352,14 @@ class MacosCalendarShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CallbackShortcuts(
     bindings: {
+      const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () =>
+          onViewChanged(ViewMode.month),
+      const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () =>
+          onViewChanged(ViewMode.week),
+      const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () =>
+          onViewChanged(ViewMode.day),
+      const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () =>
+          onViewChanged(ViewMode.list),
       const SingleActivator(LogicalKeyboardKey.keyN, meta: true): onCreate,
       const SingleActivator(LogicalKeyboardKey.keyF, meta: true): onSearch,
       const SingleActivator(LogicalKeyboardKey.keyT, meta: true): onToday,

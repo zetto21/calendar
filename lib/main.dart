@@ -96,9 +96,8 @@ class CalendarApp extends StatelessWidget {
           return child!;
         }
         return MediaQuery(
-          data: MediaQuery.of(
-            context,
-          ).copyWith(textScaler: const TextScaler.linear(_macosTextScale)),
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(_macosTextScale)),
           child: child!,
         );
       },
@@ -1342,6 +1341,7 @@ class _CalendarHomeState extends State<CalendarHome>
                 theme: theme,
                 title: _title,
                 account: widget.user?.email ?? '게스트',
+                userName: widget.user?.name ?? '',
                 selectedDate: _anchorDate,
                 onDateSelected: (date) {
                   setState(() {
@@ -1362,6 +1362,16 @@ class _CalendarHomeState extends State<CalendarHome>
                     onChanged: (value) =>
                         setState(() => _showPersonalCalendar = value!),
                   ),
+                ],
+                importedControls: [
+                  for (final source in imported.sources.entries)
+                    ImportedCalendarGroup(
+                      theme: theme,
+                      imports: imported,
+                      provider: source.key,
+                    ),
+                ],
+                featureControls: [
                   CheckboxListTile(
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
@@ -1374,16 +1384,6 @@ class _CalendarHomeState extends State<CalendarHome>
                       () => _showAnniversaries = value,
                     ),
                   ),
-                ],
-                importedControls: [
-                  for (final source in imported.sources.entries)
-                    ImportedCalendarGroup(
-                      theme: theme,
-                      imports: imported,
-                      provider: source.key,
-                    ),
-                ],
-                featureControls: [
                   CheckboxListTile(
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
@@ -1814,12 +1814,6 @@ class _AccountDrawer extends StatelessWidget {
               const SizedBox(height: 20),
               _sectionTitle('표시할 캘린더'),
               const SizedBox(height: 6),
-              _displayCheckbox(
-                label: '법정 기념일',
-                value: showAnniversaries,
-                onChanged: onAnniversariesChanged,
-                subscription: true,
-              ),
               if (imports.sources.isNotEmpty) ...[
                 for (final entry in imports.sources.entries)
                   ImportedCalendarGroup(
@@ -1831,6 +1825,12 @@ class _AccountDrawer extends StatelessWidget {
               const SizedBox(height: 28),
               _sectionTitle('기능 표시'),
               const SizedBox(height: 10),
+              _displayCheckbox(
+                label: '법정 기념일',
+                value: showAnniversaries,
+                onChanged: onAnniversariesChanged,
+                subscription: true,
+              ),
               _displayCheckbox(
                 label: '공휴일',
                 value: showHolidays,
@@ -1966,33 +1966,30 @@ class _CalendarConnectionsSheet extends StatelessWidget {
               style: TextStyle(color: theme.textMuted, fontSize: 12),
             ),
             const SizedBox(height: 24),
-            _connectionSection('이 기기', [
-              _ConnectionInfo(
-                'apple',
-                'Apple 캘린더',
-                CupertinoIcons.calendar,
-                '기기에 등록된 캘린더 일정 가져오기',
-              ),
-              _ConnectionInfo(
-                'naver',
-                '네이버 캘린더',
-                CupertinoIcons.cloud,
-                'iPhone CalDAV에 등록된 네이버 일정',
-              ),
-            ]),
-            const SizedBox(height: 22),
+            // EventKit 채널은 iOS에만 있어 macOS에서는 기기 캘린더 연동을 숨긴다.
+            if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) ...[
+              _connectionSection('이 기기', [
+                _ConnectionInfo(
+                  'apple',
+                  'Apple 캘린더',
+                  CupertinoIcons.calendar,
+                  '기기에 등록된 캘린더 일정 가져오기',
+                ),
+                _ConnectionInfo(
+                  'naver',
+                  '네이버 캘린더',
+                  CupertinoIcons.cloud,
+                  'iPhone CalDAV에 등록된 네이버 일정',
+                ),
+              ]),
+              const SizedBox(height: 22),
+            ],
             _connectionSection('계정 연결', [
               _ConnectionInfo(
                 'google',
                 'Google 캘린더',
                 CupertinoIcons.globe,
                 'Google 계정에서 캘린더 선택',
-              ),
-              _ConnectionInfo(
-                'kakao',
-                '카카오 캘린더',
-                CupertinoIcons.chat_bubble_2,
-                '카카오톡 캘린더 일정 가져오기',
               ),
               _ConnectionInfo(
                 'notion',
