@@ -13,7 +13,6 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
-    var guests = 0;
     var signups = 0;
     for (final theme in [lightTheme, darkTheme]) {
       for (final size in [
@@ -30,7 +29,6 @@ void main() {
               theme: theme,
               onAuthenticated: (_) {},
               onSignup: () => signups++,
-              onContinueAsGuest: () => guests++,
             ),
           ),
         );

@@ -252,35 +252,40 @@ class _MonthCell extends StatelessWidget {
                               ),
                               alignment: Alignment.centerLeft,
                               decoration: BoxDecoration(
-                                color: withAlpha(
-                                  colorFromHex(event.color),
-                                  (theme.isDark ? 0.22 : 0.12) * opacity,
-                                ),
+                                color: event.time != null
+                                    ? Colors.transparent
+                                    : withAlpha(
+                                        colorFromHex(event.color),
+                                        (event.id.startsWith(
+                                                  'anniversary:$key:',
+                                                )
+                                                ? 0.20
+                                                : 0.12) *
+                                            opacity,
+                                      ),
                                 borderRadius: BorderRadius.circular(5),
-                                border: Border(
-                                  left: BorderSide(
-                                    color: withAlpha(
-                                      colorFromHex(event.color),
-                                      0.7 * opacity,
-                                    ),
-                                    width: 3,
-                                  ),
-                                ),
+                                border: isSpecialDay(event)
+                                    ? null
+                                    : Border(
+                                        left: BorderSide(
+                                          color: withAlpha(
+                                            colorFromHex(event.color),
+                                            0.6 * opacity,
+                                          ),
+                                          width: 3,
+                                        ),
+                                      ),
                               ),
                               child: Text(
                                 event.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w500,
                                   color:
                                       (isSpecialDay(event)
-                                              ? Color.lerp(
-                                                  colorFromHex(event.color),
-                                                  theme.text,
-                                                  theme.isDark ? 0.45 : 0.25,
-                                                )!
+                                              ? colorFromHex(event.color)
                                               : theme.text)
                                           .withValues(alpha: opacity),
                                 ),

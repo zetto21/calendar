@@ -40,6 +40,7 @@ import 'screens/month_agenda.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/top_bar.dart';
 import 'widgets/macos_calendar_shell.dart';
+import 'widgets/imported_calendar_group.dart';
 import 'widgets/liquid_glass.dart';
 import 'widgets/server_connection_monitor.dart';
 
@@ -90,6 +91,17 @@ class CalendarApp extends StatelessWidget {
       ],
       theme: buildMaterialTheme(lightTheme),
       darkTheme: buildMaterialTheme(darkTheme),
+      builder: (context, child) {
+        if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) {
+          return child!;
+        }
+        return MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(_macosTextScale)),
+          child: child!,
+        );
+      },
       // Place this below MaterialApp so its dialog uses the root Navigator,
       // and above AuthGate so it also covers the login and consent flow.
       home: ServerConnectionMonitor(child: AuthGate(deviceZone: deviceZone)),
@@ -97,10 +109,13 @@ class CalendarApp extends StatelessWidget {
   }
 }
 
+/// macOS 전체 글자 크기 배율 (1.0 = 기본). 크기를 바꾸려면 이 값만 수정.
+const double _macosTextScale = 0.9;
+
 enum _AuthScreen { login, signup }
 
 /// Port of App.tsx's auth gating: wait for a stored session to be restored,
-/// then show login/signup, or fall straight through in guest mode.
+/// then show login/signup or the authenticated calendar.
 class AuthGate extends StatefulWidget {
   final tz.Location deviceZone;
   const AuthGate({super.key, required this.deviceZone});
@@ -112,25 +127,33 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool _loading = true;
   AuthUser? _user;
-  bool _guest = false;
   _AuthScreen _screen = _AuthScreen.login;
   int _authGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    // Do not block the first screen on an API request. A disconnected server
-    // must show the login screen and its connection alert immediately.
-    _loading = false;
+    _loading = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
     unawaited(MacosWindow.showCalendar(false));
-    AuthService.instance.restoreSession().then((user) {
-      if (mounted && _authGeneration == 0 && user != null) {
-        _acceptUser(user);
-      }
-    });
+    unawaited(_restoreSession());
   }
 
-  Future<void> _acceptUser(AuthUser? user, {bool guest = false}) async {
+  Future<void> _restoreSession() async {
+    try {
+      final user = await AuthService.instance.restoreSession();
+      if (mounted && _authGeneration == 0 && user != null) {
+        await _acceptUser(user);
+      }
+    } catch (error) {
+      debugPrint('Could not restore the saved session (${error.runtimeType})');
+    } finally {
+      if (mounted && _authGeneration == 0) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _acceptUser(AuthUser? user) async {
     final generation = ++_authGeneration;
     setState(() => _loading = true);
     final imports = context.read<ImportedEvents>();
@@ -142,11 +165,10 @@ class _AuthGateState extends State<AuthGate> {
     await DisplaySettings.instance.load();
     await imports.load();
     if (!mounted || generation != _authGeneration) return;
-    await MacosWindow.showCalendar(user != null || guest);
+    await MacosWindow.showCalendar(user != null);
     if (!mounted || generation != _authGeneration) return;
     setState(() {
       _user = user;
-      _guest = guest;
       _loading = false;
       _screen = _AuthScreen.login;
     });
@@ -168,7 +190,7 @@ class _AuthGateState extends State<AuthGate> {
         ),
       );
     }
-    if (_user == null && !_guest) {
+    if (_user == null) {
       if (_screen == _AuthScreen.signup) {
         return SignupScreen(
           theme: theme,
@@ -180,7 +202,6 @@ class _AuthGateState extends State<AuthGate> {
         theme: theme,
         onAuthenticated: _acceptUser,
         onSignup: () => setState(() => _screen = _AuthScreen.signup),
-        onContinueAsGuest: () => _acceptUser(null, guest: true),
       );
     }
     return CalendarHome(
@@ -188,7 +209,11 @@ class _AuthGateState extends State<AuthGate> {
       user: _user,
       onLogout: () async {
         await LiveActivity.end();
-        if (_user != null) await AuthService.instance.logout();
+        try {
+          if (_user != null) await AuthService.instance.logout();
+        } on ServerConnectionException {
+          // Local credentials are cleared even when the server is offline.
+        }
         if (mounted) await _acceptUser(null);
       },
     );
@@ -891,7 +916,16 @@ class _CalendarHomeState extends State<CalendarHome>
                   children: [
                     for (final calendar in calendars)
                       _CalendarImportChoice(
-                        title: calendar.title.split(' · ').first,
+                        title: calendar.title,
+                        subtitle: provider == 'kakao'
+                            ? switch (calendar.category) {
+                                'primary' => '기본 캘린더',
+                                'subscription' => '구독 캘린더',
+                                'shared' => '공유 캘린더',
+                                'user' => '서브 캘린더',
+                                _ => null,
+                              }
+                            : null,
                         selected: selected.contains(calendar),
                         onTap: () => setDialogState(() {
                           if (selected.contains(calendar)) {
@@ -909,6 +943,25 @@ class _CalendarHomeState extends State<CalendarHome>
     if (choices == null || choices.isEmpty || !mounted) return;
     final (from, to) = _range;
     final imports = context.read<ImportedEvents>();
+    if (provider == 'kakao') {
+      // Connect whole calendars, including calendars with no events this month.
+      final connected = {
+        for (final calendar in imports.sources[provider] ?? <ImportCalendar>[])
+          if (calendar.id != 'all') calendar.id: calendar,
+        for (final calendar in choices) calendar.id: calendar,
+      };
+      try {
+        await imports.refresh(
+          provider,
+          connected.values.toList(),
+          date_utils.parseDateKey(from),
+          date_utils.parseDateKey(to),
+        );
+      } on AuthException catch (error) {
+        if (mounted) await _showCalendarImportError(error.message);
+      }
+      return;
+    }
     final options = <_ImportEventOption>[];
     try {
       for (final calendar in choices) {
@@ -1312,11 +1365,30 @@ class _CalendarHomeState extends State<CalendarHome>
                   CheckboxListTile(
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
-                    activeColor: const Color(0xFFFF604E),
-                    title: const Text(
-                      '대한민국 공휴일',
-                      style: TextStyle(fontSize: 13),
+                    activeColor: theme.textSecondary,
+                    title: const Text('법정 기념일', style: TextStyle(fontSize: 13)),
+                    value: _showAnniversaries,
+                    onChanged: (value) => _setDisplaySetting(
+                      DisplaySetting.anniversaries,
+                      value!,
+                      () => _showAnniversaries = value,
                     ),
+                  ),
+                ],
+                importedControls: [
+                  for (final source in imported.sources.entries)
+                    ImportedCalendarGroup(
+                      theme: theme,
+                      imports: imported,
+                      provider: source.key,
+                    ),
+                ],
+                featureControls: [
+                  CheckboxListTile(
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: theme.textMuted,
+                    title: const Text('공휴일', style: TextStyle(fontSize: 13)),
                     value: _showHolidays,
                     onChanged: (value) => _setDisplaySetting(
                       DisplaySetting.holidays,
@@ -1327,19 +1399,8 @@ class _CalendarHomeState extends State<CalendarHome>
                   CheckboxListTile(
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
-                    activeColor: const Color(0xFFAA50C0),
-                    title: const Text('법정 기념일', style: TextStyle(fontSize: 13)),
-                    value: _showAnniversaries,
-                    onChanged: (value) => _setDisplaySetting(
-                      DisplaySetting.anniversaries,
-                      value!,
-                      () => _showAnniversaries = value,
-                    ),
-                  ),
-                  CheckboxListTile(
-                    dense: true,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: const Text('음력 표시', style: TextStyle(fontSize: 13)),
+                    activeColor: theme.textMuted,
+                    title: const Text('음력', style: TextStyle(fontSize: 13)),
                     value: _showLunar,
                     onChanged: (value) => _setDisplaySetting(
                       DisplaySetting.lunar,
@@ -1347,25 +1408,18 @@ class _CalendarHomeState extends State<CalendarHome>
                       () => _showLunar = value,
                     ),
                   ),
-                  for (final source in imported.sources.entries)
-                    for (final calendar in source.value)
-                      CheckboxListTile(
-                        dense: true,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        activeColor: colorFromHex(calendar.color),
-                        title: Text(
-                          calendar.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                        value: imported.isVisible(source.key, calendar.id),
-                        onChanged: (value) => imported.setVisible(
-                          source.key,
-                          calendar.id,
-                          value!,
-                        ),
-                      ),
+                  CheckboxListTile(
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: theme.textMuted,
+                    title: const Text('절기', style: TextStyle(fontSize: 13)),
+                    value: _showSolarTerms,
+                    onChanged: (value) => _setDisplaySetting(
+                      DisplaySetting.solarTerms,
+                      value!,
+                      () => _showSolarTerms = value,
+                    ),
+                  ),
                 ],
                 view: _view,
                 onViewChanged: (view) => setState(() => _view = view),
@@ -1758,19 +1812,22 @@ class _AccountDrawer extends StatelessWidget {
               const SizedBox(height: 16),
               Divider(color: theme.border, height: 1),
               const SizedBox(height: 20),
-              if (imports.sources.isNotEmpty) ...[
-                _sectionTitle('표시할 캘린더'),
-                const SizedBox(height: 6),
-                for (final entry in imports.sources.entries)
-                  for (final calendar in entry.value)
-                    _importedCalendarToggle(entry.key, calendar),
-              ],
+              _sectionTitle('표시할 캘린더'),
+              const SizedBox(height: 6),
               _displayCheckbox(
                 label: '법정 기념일',
                 value: showAnniversaries,
                 onChanged: onAnniversariesChanged,
                 subscription: true,
               ),
+              if (imports.sources.isNotEmpty) ...[
+                for (final entry in imports.sources.entries)
+                  ImportedCalendarGroup(
+                    theme: theme,
+                    imports: imports,
+                    provider: entry.key,
+                  ),
+              ],
               const SizedBox(height: 28),
               _sectionTitle('기능 표시'),
               const SizedBox(height: 10),
@@ -1807,14 +1864,6 @@ class _AccountDrawer extends StatelessWidget {
       ),
     ),
   );
-
-  Widget _importedCalendarToggle(String provider, ImportCalendar calendar) =>
-      _displayCheckbox(
-        label: calendar.title,
-        value: imports.isVisible(provider, calendar.id),
-        selectedColor: colorFromHex(calendar.color),
-        onChanged: (value) => imports.setVisible(provider, calendar.id, value),
-      );
 
   Widget _displayCheckbox({
     required String label,

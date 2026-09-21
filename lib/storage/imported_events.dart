@@ -177,6 +177,8 @@ class ImportedEvents extends ChangeNotifier {
               'id': calendar.id,
               'title': calendar.title,
               'color': calendar.color,
+              'category': calendar.category,
+              'nameUnavailable': calendar.nameUnavailable,
             },
         ],
     }),
@@ -189,6 +191,27 @@ class ImportedEvents extends ChangeNotifier {
     DateTime to,
   ) async {
     final generation = _accountGeneration;
+    if (provider == 'kakao' &&
+        calendars.any((calendar) => calendar.id == 'all')) {
+      calendars = await AuthService.instance.importCalendars(provider);
+      if (generation != _accountGeneration) return;
+      if (calendars.any((calendar) => calendar.id == 'all')) {
+        throw AuthException('톡캘린더 목록을 가져오려면 서버 업데이트가 필요합니다.');
+      }
+    }
+    if (provider == 'kakao') {
+      // 톡캘린더는 모든 캘린더를 같은 노란색으로 통일한다.
+      calendars = [
+        for (final calendar in calendars)
+          ImportCalendar(
+            id: calendar.id,
+            title: calendar.title,
+            color: _kakaoYellow,
+            category: calendar.category,
+            nameUnavailable: calendar.nameUnavailable,
+          ),
+      ];
+    }
     final next = <String, List<CalendarEvent>>{};
     for (final calendar in calendars) {
       final items = await AuthService.instance.importEvents(
@@ -198,9 +221,12 @@ class ImportedEvents extends ChangeNotifier {
         to,
       );
       for (final item in items) {
-        if (_excludedEvents.contains(
-          eventKey(provider, calendar.id, item.id),
-        )) {
+        // Talk calendars are connected as a whole. Older per-event import
+        // selections must not suppress their future synchronizations.
+        if (provider != 'kakao' &&
+            _excludedEvents.contains(
+              eventKey(provider, calendar.id, item.id),
+            )) {
           continue;
         }
         final event = CalendarEvent(
@@ -209,7 +235,7 @@ class ImportedEvents extends ChangeNotifier {
           title: item.title,
           time: item.time,
           duration: item.duration,
-          color: item.color,
+          color: provider == 'kakao' ? calendar.color : item.color,
           systemCalendarId: '$provider|${calendar.id}',
           description: '$provider · 읽기 전용',
         );
@@ -217,8 +243,11 @@ class ImportedEvents extends ChangeNotifier {
       }
     }
     if (generation != _accountGeneration) return;
-    replaceProvider(provider, next);
     _sources[provider] = calendars;
     await _persistSources();
+    if (generation != _accountGeneration) return;
+    replaceProvider(provider, next);
   }
 }
+
+const _kakaoYellow = '#F5D76E';

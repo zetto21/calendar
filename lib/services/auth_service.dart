@@ -3,18 +3,25 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/services.dart';
 
 class ImportCalendar {
   final String id, title, color;
+  final String category;
+  final bool nameUnavailable;
   const ImportCalendar({
     required this.id,
     required this.title,
     required this.color,
+    this.category = '',
+    this.nameUnavailable = false,
   });
   factory ImportCalendar.fromJson(Map<String, dynamic> json) => ImportCalendar(
     id: json['id'] as String,
     title: json['title'] as String,
     color: json['color'] as String? ?? '#707078',
+    category: json['category'] as String? ?? '',
+    nameUnavailable: json['nameUnavailable'] == true,
   );
 }
 
@@ -82,8 +89,44 @@ class AuthService {
   AuthService._();
   static final AuthService instance = AuthService._();
 
-  // Session credentials live only for the lifetime of this app process.
+  @visibleForTesting
+  AuthService.forTesting();
+
+  static const _sessionChannel = MethodChannel('calendar_app/session');
+  bool get _persistSession =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
   String? _sessionToken;
+  AuthUser? _sessionUser;
+  int _sessionGeneration = 0;
+
+  Future<void> _saveSession(String token, AuthUser user) async {
+    if (_persistSession) {
+      await _sessionChannel.invokeMethod<void>('write', {
+        'account': apiBase,
+        'value': jsonEncode({
+          'token': token,
+          'user': {
+            'id': user.id,
+            'email': user.email,
+            'name': user.name,
+            'createdAt': user.createdAt,
+          },
+        }),
+      });
+    }
+    _sessionGeneration++;
+    _sessionToken = token;
+    _sessionUser = user;
+  }
+
+  Future<void> _clearSession() async {
+    _sessionGeneration++;
+    _sessionToken = null;
+    _sessionUser = null;
+    if (_persistSession) {
+      await _sessionChannel.invokeMethod<void>('delete', {'account': apiBase});
+    }
+  }
 
   /// Same `http://localhost:3001` default as calendar_app/.env.example.
   /// Override at build/run time with `--dart-define=API_BASE_URL=...` (a LAN
@@ -165,7 +208,6 @@ class AuthService {
     }
     if (response.statusCode >= 500) throw ServerConnectionException();
     if (response.statusCode == 401 && path == '/api/auth/me') {
-      _sessionToken = null;
       return parse(null);
     }
     if (response.statusCode == 204) return parse(null);
@@ -199,7 +241,7 @@ class AuthService {
       method: 'POST',
       body: {'email': email.trim(), 'password': password},
     );
-    _sessionToken = result.token;
+    await _saveSession(result.token, result.user);
     return result.user;
   }
 
@@ -210,18 +252,56 @@ class AuthService {
       _authenticate('/api/auth/register', email, password);
 
   Future<AuthUser?> restoreSession() async {
+    final generation = _sessionGeneration;
+    if (_sessionToken == null && _persistSession) {
+      try {
+        final saved = await _sessionChannel.invokeMethod<String>('read', {
+          'account': apiBase,
+        });
+        if (generation != _sessionGeneration) return null;
+        if (saved != null) {
+          final data = jsonDecode(saved) as Map<String, dynamic>;
+          final token = data['token'] as String;
+          final user = AuthUser.fromJson(data['user'] as Map<String, dynamic>);
+          _sessionToken = token;
+          _sessionUser = user;
+        }
+      } on PlatformException catch (error) {
+        debugPrint('Session restore unavailable: ${error.code}');
+        return null;
+      } on MissingPluginException {
+        return null;
+      } on FormatException {
+        await _clearSession();
+        return null;
+      } on TypeError {
+        await _clearSession();
+        return null;
+      }
+    }
     final token = _sessionToken;
     if (token == null) return null;
     try {
-      return await _request(
+      final user = await _request(
         '/api/auth/me',
         (json) => json == null
             ? null
             : AuthUser.fromJson(json['user'] as Map<String, dynamic>),
         token: token,
+        timeout: const Duration(seconds: 5),
       );
-    } catch (_) {
-      // Preserve the in-memory session during a temporary network outage.
+      if (generation != _sessionGeneration) return null;
+      if (user == null) {
+        await _clearSession();
+      } else {
+        await _saveSession(token, user);
+      }
+      return user;
+    } on ServerConnectionException {
+      // The cached identity opens local data; server requests still require
+      // the stored token and remain subject to server authorization.
+      return generation == _sessionGeneration ? _sessionUser : null;
+    } on AuthException {
       return null;
     }
   }
@@ -238,7 +318,7 @@ class AuthService {
         );
       }
     } finally {
-      _sessionToken = null;
+      await _clearSession();
     }
   }
 
@@ -294,7 +374,7 @@ class AuthService {
       method: 'POST',
       body: {'code': code},
     );
-    _sessionToken = result.token;
+    await _saveSession(result.token, result.user);
     return result.user;
   }
 

@@ -15,21 +15,18 @@ final _emailRe = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
 
 enum _ProviderStatus { loading, ready, error }
 
-/// Port of components/LoginScreen.tsx: email/password form, a guest continue
-/// button, and social login via an in-app browser session that redirects
+/// Email/password form and social login via a browser session that redirects
 /// back to the calendar:// scheme (ASWebAuthenticationSession / Custom Tabs).
 class LoginScreen extends StatefulWidget {
   final AppTheme theme;
   final void Function(AuthUser user) onAuthenticated;
   final VoidCallback onSignup;
-  final VoidCallback onContinueAsGuest;
 
   const LoginScreen({
     super.key,
     required this.theme,
     required this.onAuthenticated,
     required this.onSignup,
-    required this.onContinueAsGuest,
   });
 
   @override

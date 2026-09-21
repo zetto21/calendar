@@ -24,6 +24,8 @@ class MacosCalendarShell extends StatelessWidget {
     this.selectedDate,
     this.onDateSelected,
     this.calendarControls = const [],
+    this.featureControls = const [],
+    this.importedControls = const [],
     this.onConnect,
     this.onSettings,
   });
@@ -36,6 +38,8 @@ class MacosCalendarShell extends StatelessWidget {
   final DateTime? selectedDate;
   final ValueChanged<DateTime>? onDateSelected;
   final List<Widget> calendarControls;
+  final List<Widget> featureControls;
+  final List<Widget> importedControls;
   final Widget child;
   static const labels = {
     ViewMode.month: '월간',
@@ -54,6 +58,51 @@ class MacosCalendarShell extends StatelessWidget {
         ),
         icon: Icon(icon, size: 18, color: theme.text),
       );
+
+  Widget _sectionTitle(String title) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+    child: Text(
+      title,
+      style: TextStyle(
+        color: theme.textSecondary,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
+
+  List<Widget> _displayControls({bool dialog = false}) => [
+    _sectionTitle('표시할 캘린더'),
+    for (final control in calendarControls)
+      if (dialog && control is CheckboxListTile)
+        _CalendarToggle(control: control)
+      else
+        control,
+    if (calendarControls.isEmpty)
+      ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+        leading: Icon(CupertinoIcons.calendar, color: theme.accent, size: 18),
+        title: const Text('내 일정'),
+        onTap: () => onViewChanged(ViewMode.month),
+      ),
+    if (importedControls.isNotEmpty) ...[
+      const SizedBox(height: 8),
+      for (final control in importedControls)
+        if (dialog && control is CheckboxListTile)
+          _CalendarToggle(control: control)
+        else
+          control,
+    ],
+    if (featureControls.isNotEmpty) ...[
+      const SizedBox(height: 8),
+      _sectionTitle('기능 표시'),
+      for (final control in featureControls)
+        if (dialog && control is CheckboxListTile)
+          _CalendarToggle(control: control)
+        else
+          control,
+    ],
+  ];
 
   void _showCalendars(BuildContext context) {
     showDialog<void>(
@@ -75,7 +124,7 @@ class MacosCalendarShell extends StatelessWidget {
                         '내 캘린더',
                         style: TextStyle(
                           color: theme.text,
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -92,13 +141,8 @@ class MacosCalendarShell extends StatelessWidget {
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final control in calendarControls)
-                        if (control is CheckboxListTile)
-                          _CalendarToggle(control: control)
-                        else
-                          control,
-                    ],
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: _displayControls(dialog: true),
                   ),
                 ),
               ),
@@ -172,7 +216,7 @@ class MacosCalendarShell extends StatelessWidget {
     final cells = dates.getMonthMatrix(date.year, date.month - 1);
     return Container(
       key: const ValueKey('macos-calendar-sidebar'),
-      width: 224,
+      width: 248,
       decoration: BoxDecoration(
         color: theme.bgSecondary,
         border: Border(right: BorderSide(color: theme.border)),
@@ -182,7 +226,7 @@ class MacosCalendarShell extends StatelessWidget {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 12, 12),
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 8),
               child: Row(
                 children: [
                   Expanded(
@@ -190,7 +234,7 @@ class MacosCalendarShell extends StatelessWidget {
                       '캘린더',
                       style: TextStyle(
                         color: theme.text,
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -215,20 +259,7 @@ class MacosCalendarShell extends StatelessWidget {
                       style: TextStyle(color: theme.textMuted, fontSize: 11),
                     ),
                   ),
-                  ...calendarControls,
-                  if (calendarControls.isEmpty)
-                    ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                      ),
-                      leading: Icon(
-                        CupertinoIcons.calendar,
-                        color: theme.accent,
-                        size: 18,
-                      ),
-                      title: const Text('내 일정'),
-                      onTap: () => onViewChanged(ViewMode.month),
-                    ),
+                  ..._displayControls(),
                 ],
               ),
             ),
@@ -280,7 +311,7 @@ class MacosCalendarShell extends StatelessWidget {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: dates.isSameDay(cell.date, date)
-                                    ? theme.danger
+                                    ? theme.border
                                     : null,
                               ),
                               child: Text(
@@ -288,7 +319,7 @@ class MacosCalendarShell extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: dates.isSameDay(cell.date, date)
-                                      ? Colors.white
+                                      ? theme.text
                                       : theme.text.withValues(
                                           alpha: cell.inMonth ? 1 : 0.3,
                                         ),
@@ -324,101 +355,111 @@ class MacosCalendarShell extends StatelessWidget {
           onPrevious,
       const SingleActivator(LogicalKeyboardKey.arrowRight, meta: true): onNext,
     },
-    child: Focus(
-      autofocus: true,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final sidebar = constraints.maxWidth >= 1000;
-          return ColoredBox(
-            color: theme.bg,
-            child: Row(
-              children: [
-                if (sidebar) _sidebar(),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: theme.bgSecondary,
-                          border: Border(
-                            bottom: BorderSide(color: theme.border),
+    child: Theme(
+      data: Theme.of(context).copyWith(
+        visualDensity: VisualDensity.compact,
+        listTileTheme: Theme.of(context).listTileTheme.copyWith(
+          dense: true,
+          minVerticalPadding: 4,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+      ),
+      child: Focus(
+        autofocus: true,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final sidebar = constraints.maxWidth >= 1000;
+            return ColoredBox(
+              color: theme.bg,
+              child: Row(
+                children: [
+                  if (sidebar) _sidebar(),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.bgSecondary,
+                            border: Border(
+                              bottom: BorderSide(color: theme.border),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              if (!sidebar)
+                                _icon(
+                                  '캘린더 표시',
+                                  CupertinoIcons.sidebar_left,
+                                  () => _showCalendars(context),
+                                ),
+                              _icon('일정 추가 · ⌘N', CupertinoIcons.add, onCreate),
+                              const Spacer(),
+                              _views(),
+                              const Spacer(),
+                              _icon(
+                                '일정 검색 · ⌘F',
+                                CupertinoIcons.search,
+                                onSearch,
+                              ),
+                              if (!sidebar)
+                                _icon(
+                                  '설정',
+                                  CupertinoIcons.gear,
+                                  onSettings ?? onManage,
+                                ),
+                            ],
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            if (!sidebar)
-                              _icon(
-                                '캘린더 표시',
-                                CupertinoIcons.sidebar_left,
-                                () => _showCalendars(context),
-                              ),
-                            _icon('일정 추가 · ⌘N', CupertinoIcons.add, onCreate),
-                            const Spacer(),
-                            _views(),
-                            const Spacer(),
-                            _icon(
-                              '일정 검색 · ⌘F',
-                              CupertinoIcons.search,
-                              onSearch,
-                            ),
-                            if (!sidebar)
-                              _icon(
-                                '설정',
-                                CupertinoIcons.gear,
-                                onSettings ?? onManage,
-                              ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 18, 16, 18),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: theme.text,
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.7,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: theme.text,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.7,
+                                  ),
                                 ),
                               ),
-                            ),
-                            _icon(
-                              '이전 · ⌘←',
-                              CupertinoIcons.chevron_left,
-                              onPrevious,
-                            ),
-                            TextButton(
-                              onPressed: onToday,
-                              style: TextButton.styleFrom(
-                                foregroundColor: theme.text,
+                              _icon(
+                                '이전 · ⌘←',
+                                CupertinoIcons.chevron_left,
+                                onPrevious,
                               ),
-                              child: const Text('오늘'),
-                            ),
-                            _icon(
-                              '다음 · ⌘→',
-                              CupertinoIcons.chevron_right,
-                              onNext,
-                            ),
-                          ],
+                              TextButton(
+                                onPressed: onToday,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: theme.text,
+                                ),
+                                child: const Text('오늘'),
+                              ),
+                              _icon(
+                                '다음 · ⌘→',
+                                CupertinoIcons.chevron_right,
+                                onNext,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Expanded(child: child),
-                    ],
+                        Expanded(child: child),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     ),
   );

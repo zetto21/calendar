@@ -1,7 +1,9 @@
 import Cocoa
 import FlutterMacOS
+import Security
 
 class MainFlutterWindow: NSWindow {
+  private var sessionChannel: FlutterMethodChannel?
   private var windowChannel: FlutterMethodChannel?
   private var calendarFrame: NSRect?
   private var currentScreen = "login"
@@ -12,6 +14,61 @@ class MainFlutterWindow: NSWindow {
     contentViewController = flutterViewController
     RegisterGeneratedPlugins(registry: flutterViewController)
     super.awakeFromNib()
+
+    sessionChannel = FlutterMethodChannel(
+      name: "calendar_app/session",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    sessionChannel?.setMethodCallHandler { call, result in
+      guard let arguments = call.arguments as? [String: String],
+            let account = arguments["account"] else {
+        result(FlutterError(code: "invalid_arguments", message: "Missing account", details: nil))
+        return
+      }
+      let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: (Bundle.main.bundleIdentifier ?? "calendar_app") + ".session",
+        kSecAttrAccount as String: account,
+      ]
+      var status: OSStatus
+      switch call.method {
+      case "read":
+        var lookup = query
+        lookup[kSecReturnData as String] = true
+        lookup[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        status = SecItemCopyMatching(lookup as CFDictionary, &item)
+        if status == errSecItemNotFound { result(nil); return }
+        if status == errSecSuccess, let data = item as? Data {
+          result(String(data: data, encoding: .utf8))
+          return
+        }
+      case "write":
+        guard let value = arguments["value"], let data = value.data(using: .utf8) else {
+          result(FlutterError(code: "invalid_value", message: "Missing session", details: nil))
+          return
+        }
+        status = SecItemUpdate(query as CFDictionary,
+          [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+          var item = query
+          item[kSecValueData as String] = data
+          status = SecItemAdd(item as CFDictionary, nil)
+        }
+      case "delete":
+        status = SecItemDelete(query as CFDictionary)
+        if status == errSecItemNotFound { status = errSecSuccess }
+      default:
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      if status == errSecSuccess {
+        result(nil)
+      } else {
+        result(FlutterError(code: "keychain_\(status)",
+          message: "Unable to access saved session", details: nil))
+      }
+    }
 
     // Start compact, before Flutter restores the account or draws the login form.
     applyScreen("login", animated: false)
