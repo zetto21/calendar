@@ -8,6 +8,51 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets(
+    'mini calendar includes selectable next-month dates in long months',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1200, 700);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      DateTime? selected;
+      for (final month in [2, 8, 9, 12]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: MacosCalendarShell(
+                theme: lightTheme,
+                title: '달력',
+                account: '',
+                view: ViewMode.week,
+                selectedDate: DateTime(2026, month, 28),
+                onDateSelected: (date) => selected = date,
+                onViewChanged: (_) {},
+                onPrevious: () {},
+                onNext: () {},
+                onToday: () {},
+                onCreate: () {},
+                onSearch: () {},
+                onManage: () {},
+                child: const SizedBox(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final next = DateTime(2026, month + 1, 7);
+        final key = '${next.year}-${next.month.toString().padLeft(2, '0')}-07';
+        final day = find.byKey(ValueKey('mini-calendar-$key'));
+        expect(day, findsOneWidget);
+        await tester.tap(day);
+        expect(selected, next);
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
   testWidgets('macOS calendar resizes and supports navigation and shortcuts', (
     tester,
   ) async {
@@ -93,6 +138,42 @@ void main() {
           expect(edits, greaterThan(0));
           await tester.tap(find.byTooltip('주간 · ⌘2'));
           expect(view, ViewMode.week);
+          await tester.pumpAndSettle();
+          for (var day = 20; day <= 26; day++) {
+            final cell = tester.widget<Semantics>(
+              find.byKey(ValueKey('mini-calendar-2026-09-$day')),
+            );
+            expect(cell.properties.selected, isTrue);
+          }
+          expect(
+            tester
+                .widget<Semantics>(
+                  find.byKey(const ValueKey('mini-calendar-2026-09-27')),
+                )
+                .properties
+                .selected,
+            isFalse,
+          );
+          await tester.tap(find.byTooltip('일간 · ⌘3'));
+          await tester.pumpAndSettle();
+          expect(
+            tester
+                .widget<Semantics>(
+                  find.byKey(const ValueKey('mini-calendar-2026-09-20')),
+                )
+                .properties
+                .selected,
+            isTrue,
+          );
+          expect(
+            tester
+                .widget<Semantics>(
+                  find.byKey(const ValueKey('mini-calendar-2026-09-21')),
+                )
+                .properties
+                .selected,
+            isFalse,
+          );
           await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
           await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
           await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);

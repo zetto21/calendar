@@ -105,6 +105,28 @@ class _TopBarState extends State<TopBar> {
               ),
             ],
           ),
+          if (widget.view == ViewMode.day || widget.view == ViewMode.week)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _actionButton(
+                  tooltip: widget.view == ViewMode.day ? '이전 날' : '이전 주',
+                  icon: CupertinoIcons.chevron_left,
+                  onPressed: widget.onPrev,
+                  color: theme.text,
+                ),
+                TextButton(
+                  onPressed: widget.onToday,
+                  child: Text('오늘', style: TextStyle(color: theme.text)),
+                ),
+                _actionButton(
+                  tooltip: widget.view == ViewMode.day ? '다음 날' : '다음 주',
+                  icon: CupertinoIcons.chevron_right,
+                  onPressed: widget.onNext,
+                  color: theme.text,
+                ),
+              ],
+            ),
         ],
       ),
     );

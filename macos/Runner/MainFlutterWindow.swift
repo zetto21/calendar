@@ -1,8 +1,10 @@
 import Cocoa
 import FlutterMacOS
 import Security
+import UserNotifications
 
 class MainFlutterWindow: NSWindow {
+  private var notificationChannel: FlutterMethodChannel?
   private var sessionChannel: FlutterMethodChannel?
   private var windowChannel: FlutterMethodChannel?
   private var calendarFrame: NSRect?
@@ -14,6 +16,47 @@ class MainFlutterWindow: NSWindow {
     contentViewController = flutterViewController
     RegisterGeneratedPlugins(registry: flutterViewController)
     super.awakeFromNib()
+
+    notificationChannel = FlutterMethodChannel(
+      name: "calendar/desktop_notifications",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    notificationChannel?.setMethodCallHandler { call, result in
+      guard call.method == "show" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let args = call.arguments as? [String: Any],
+            let id = args["id"] as? Int,
+            let title = args["title"] as? String,
+            let body = args["body"] as? String else {
+        result(FlutterError(code: "invalid_arguments", message: "Missing notification content", details: nil))
+        return
+      }
+      let center = UNUserNotificationCenter.current()
+      center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+        guard granted, error == nil else {
+          DispatchQueue.main.async { result(false) }
+          return
+        }
+        // Replace outdated connectivity notices when the connection changes.
+        if id == 4101 || id == 4102 {
+          let stale = ["calendar.4101", "calendar.4102"]
+          center.removePendingNotificationRequests(withIdentifiers: stale)
+          center.removeDeliveredNotifications(withIdentifiers: stale)
+        }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(
+          identifier: "calendar.\(id)", content: content, trigger: nil
+        )
+        center.add(request) { error in
+          DispatchQueue.main.async { result(error == nil) }
+        }
+      }
+    }
 
     sessionChannel = FlutterMethodChannel(
       name: "calendar_app/session",

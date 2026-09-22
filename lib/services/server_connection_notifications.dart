@@ -1,9 +1,11 @@
 import 'dart:io' show Platform;
 
+import 'desktop_notifications.dart';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
-/// Android system notifications for server connectivity transitions.
+/// Android and macOS system notifications for server connectivity transitions.
 ///
 /// The monitor calls this only when the connection state changes, never for
 /// every health-check tick.
@@ -30,30 +32,36 @@ class ServerConnectionNotifications {
     }
   }
 
-  static Future<void> showDisconnected() => _show(
+  static Future<bool> showDisconnected() => _show(
     id: 4101,
     title: '서버에 연결할 수 없습니다',
     body: '인터넷 연결을 확인한 후 새로고침해 주세요.',
   );
 
-  static Future<void> showReconnected() =>
+  static Future<bool> showReconnected() =>
       _show(id: 4102, title: '서버 연결 복구', body: '서버에 다시 연결되었습니다.');
 
-  static Future<void> _show({
+  static Future<bool> _show({
     required int id,
     required String title,
     required String body,
   }) async {
+    if (DesktopNotifications.supported) {
+      return DesktopNotifications.show(id: id, title: title, body: body);
+    }
     await initialize();
-    if (kIsWeb || !Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return false;
     try {
       await _channel.invokeMethod<void>('show', {
         'id': id,
         'title': title,
         'body': body,
       });
+      return true;
     } on PlatformException {
-      // Notification permission may have been denied by the user.
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 }

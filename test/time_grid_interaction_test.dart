@@ -17,6 +17,9 @@ CalendarEvent _event(String id, String time, int duration) => CalendarEvent(
 
 Widget _grid({
   required EventMap events,
+  DateTime? date,
+  VoidCallback? onPrevious,
+  VoidCallback? onNext,
   void Function(DateTime, String, int)? onRangeCreate,
   void Function(CalendarEvent, String, int)? onEventResize,
 }) => MaterialApp(
@@ -25,8 +28,10 @@ Widget _grid({
       width: 600,
       height: 1300,
       child: TimeGridView(
+        onPrevious: onPrevious,
+        onNext: onNext,
         theme: lightTheme,
-        days: [DateTime(2026, 9, 22)],
+        days: [date ?? DateTime(2026, 9, 22)],
         events: events,
         onSlotPress: (_, _) {},
         onEventPress: (_) {},
@@ -39,6 +44,165 @@ Widget _grid({
 );
 
 void main() {
+  testWidgets(
+    'horizontal scrolling follows pixels and advances one day at a time',
+    (tester) async {
+      var first = DateTime(2026, 9, 20);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, update) => TimeGridView(
+                theme: lightTheme,
+                days: List.generate(7, (i) => first.add(Duration(days: i))),
+                events: const {},
+                onSlotPress: (_, _) {},
+                onEventPress: (_) {},
+                onShiftDays: (days) =>
+                    update(() => first = first.add(Duration(days: days))),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final x = tester.getCenter(find.text('22')).dx;
+      final position = tester.getCenter(find.byType(TimeGridView));
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: position,
+          scrollDelta: const Offset(25, 0),
+        ),
+      );
+      await tester.pump();
+      expect(tester.getCenter(find.text('22')).dx, closeTo(x - 25, 0.1));
+      expect(first, DateTime(2026, 9, 20));
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: position,
+          scrollDelta: const Offset(100, 0),
+        ),
+      );
+      await tester.pump();
+      expect(first, DateTime(2026, 9, 21));
+      expect(tester.getCenter(find.text('22')).dx, closeTo(x - 125, 0.1));
+      await tester.pumpAndSettle(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.getCenter(find.text('22')).dx, closeTo(x - 125, 0.1));
+      expect(first, DateTime(2026, 9, 21));
+      // Releasing a mouse drag also preserves a partially visible day.
+      final drag = await tester.startGesture(
+        position,
+        kind: PointerDeviceKind.mouse,
+      );
+      await drag.moveBy(const Offset(-35, 0));
+      await tester.pump();
+      await drag.moveBy(const Offset(-25, 0));
+      await tester.pump();
+      final releaseX = tester.getCenter(find.text('22')).dx;
+      await drag.up();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.getCenter(find.text('22')).dx, closeTo(releaseX, 0.1));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'date changes slide in the navigation direction and retain scroll',
+    (tester) async {
+      await tester.pumpWidget(
+        _grid(events: const {}, date: DateTime(2026, 9, 22)),
+      );
+      final scroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      final offset = scroll.position.pixels;
+      final page = find
+          .descendant(
+            of: find.byKey(const ValueKey('time-grid-current-page')),
+            matching: find.byType(Column),
+          )
+          .first;
+      final origin = tester.getTopLeft(page).dx;
+      await tester.pumpWidget(
+        _grid(events: const {}, date: DateTime(2026, 9, 23)),
+      );
+      expect(tester.getTopLeft(page).dx, greaterThan(origin));
+      expect(find.text('22'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 140));
+      final halfway = tester.getTopLeft(page).dx;
+      expect(halfway, greaterThan(origin));
+      expect(halfway, lessThan(600));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(page).dx, origin);
+      expect(find.text('22'), findsNothing);
+      expect(scroll.position.pixels, offset);
+      await tester.pumpWidget(
+        _grid(events: const {}, date: DateTime(2026, 9, 21)),
+      );
+      expect(tester.getTopLeft(page).dx, lessThan(origin));
+      // A second navigation while moving must settle on the latest date.
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pumpWidget(
+        _grid(events: const {}, date: DateTime(2026, 10, 1)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1'), findsOneWidget);
+      expect(tester.getTopLeft(page).dx, origin);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('horizontal swipes navigate without changing the hour scroll', (
+    tester,
+  ) async {
+    var previous = 0;
+    var next = 0;
+    await tester.pumpWidget(
+      _grid(
+        events: const {},
+        onPrevious: () => previous++,
+        onNext: () => next++,
+      ),
+    );
+    final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    final offset = scroll.position.pixels;
+    await tester.drag(find.byType(TimeGridView), const Offset(-180, 0));
+    await tester.pumpAndSettle();
+    expect(next, 1);
+    expect(previous, 0);
+    expect(scroll.position.pixels, offset);
+    await tester.drag(find.byType(TimeGridView), const Offset(180, 0));
+    await tester.pumpAndSettle();
+    expect(previous, 1);
+  });
+
+  testWidgets('horizontal wheel momentum navigates once per gesture', (
+    tester,
+  ) async {
+    var next = 0;
+    await tester.pumpWidget(_grid(events: const {}, onNext: () => next++));
+    final position = tester.getCenter(find.byType(TimeGridView));
+    for (var i = 0; i < 5; i++) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: position,
+          scrollDelta: const Offset(30, 0),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(next, 1);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: position, scrollDelta: const Offset(60, 0)),
+    );
+    expect(next, 2);
+    await tester.pump(const Duration(milliseconds: 200));
+  });
+
   testWidgets('overlapping events share the column side by side', (
     tester,
   ) async {

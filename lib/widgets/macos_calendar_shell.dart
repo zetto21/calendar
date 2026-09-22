@@ -23,6 +23,7 @@ class MacosCalendarShell extends StatelessWidget {
     required this.onManage,
     required this.child,
     this.selectedDate,
+    this.visibleDays,
     this.onDateSelected,
     this.calendarControls = const [],
     this.featureControls = const [],
@@ -44,6 +45,7 @@ class MacosCalendarShell extends StatelessWidget {
   final void Function(int dx, int dy)? onNavigate;
   final void Function(int days, int minutes)? onNudge;
   final DateTime? selectedDate;
+  final List<DateTime>? visibleDays;
   final ValueChanged<DateTime>? onDateSelected;
   final List<Widget> calendarControls;
   final List<Widget> featureControls;
@@ -220,9 +222,104 @@ class MacosCalendarShell extends StatelessWidget {
     ),
   );
 
+  Widget _miniCalendarDay(dates.MonthCell cell, DateTime anchor) {
+    final focused = dates.isSameDay(cell.date, anchor);
+    final today = dates.isSameDay(cell.date, DateTime.now());
+    final visible = visibleDays != null
+        ? visibleDays!.any((day) => dates.isSameDay(day, cell.date))
+        : view == ViewMode.week
+        ? dates.isSameDay(
+            dates.startOfWeek(cell.date),
+            dates.startOfWeek(anchor),
+          )
+        : focused;
+    final band = visible && view == ViewMode.week;
+    final radius = BorderRadius.horizontal(
+      left: Radius.circular(
+        cell.date.weekday == DateTime.sunday ||
+                (visibleDays != null &&
+                    dates.isSameDay(cell.date, visibleDays!.first))
+            ? 12
+            : 0,
+      ),
+      right: Radius.circular(
+        cell.date.weekday == DateTime.saturday ||
+                (visibleDays != null &&
+                    dates.isSameDay(cell.date, visibleDays!.last))
+            ? 12
+            : 0,
+      ),
+    );
+    return Semantics(
+      key: ValueKey('mini-calendar-${dates.toDateKey(cell.date)}'),
+      selected: visible,
+      button: true,
+      label: '${cell.date.year}년 ${cell.date.month}월 ${cell.date.day}일',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => onDateSelected?.call(cell.date),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          decoration: BoxDecoration(
+            color: band
+                ? theme.accent.withValues(alpha: 0.16)
+                : Colors.transparent,
+            borderRadius: radius,
+          ),
+          alignment: Alignment.center,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 23,
+            height: 23,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: focused ? theme.accent : Colors.transparent,
+              border: today && !focused
+                  ? Border.all(color: theme.accent)
+                  : null,
+            ),
+            child: Text(
+              '${cell.date.day}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: visible || today
+                    ? FontWeight.w600
+                    : FontWeight.w400,
+                color: focused
+                    ? Colors.white
+                    : visible || today
+                    ? theme.accent
+                    : theme.text.withValues(alpha: cell.inMonth ? 1 : 0.3),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sidebar() {
     final date = selectedDate ?? DateTime.now();
     final cells = dates.getMonthMatrix(date.year, date.month - 1);
+    // Always include the next month's first week, even in six-row months.
+    var lastRequired = DateTime(date.year, date.month + 1, 7);
+    if (visibleDays != null) {
+      for (final day in visibleDays!) {
+        if (day.isAfter(lastRequired)) lastRequired = day;
+      }
+    }
+    while (cells.length < 42 ||
+        cells.last.date.isBefore(lastRequired) ||
+        cells.length % 7 != 0) {
+      final next = dates.addDays(cells.last.date, 1);
+      cells.add(
+        dates.MonthCell(
+          next,
+          next.month == date.month && next.year == date.year,
+        ),
+      );
+    }
     return Container(
       key: const ValueKey('macos-calendar-sidebar'),
       width: 248,
@@ -310,35 +407,7 @@ class MacosCalendarShell extends StatelessWidget {
                     crossAxisCount: 7,
                     mainAxisExtent: 25,
                     children: [
-                      for (final cell in cells)
-                        InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () => onDateSelected?.call(cell.date),
-                          child: Center(
-                            child: Container(
-                              width: 23,
-                              height: 23,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: dates.isSameDay(cell.date, date)
-                                    ? theme.border
-                                    : null,
-                              ),
-                              child: Text(
-                                '${cell.date.day}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: dates.isSameDay(cell.date, date)
-                                      ? theme.text
-                                      : theme.text.withValues(
-                                          alpha: cell.inMonth ? 1 : 0.3,
-                                        ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                      for (final cell in cells) _miniCalendarDay(cell, date),
                     ],
                   ),
                 ],

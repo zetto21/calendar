@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 
 import '../logic/date_utils.dart' as date_utils;
 import '../models/calendar_event.dart';
@@ -12,7 +14,9 @@ const double _labelWidth = 42;
 /// Port of components/TimeGridView.tsx: an hour-by-hour grid (day or week),
 /// an all-day chip row, and a live "now" line.
 class TimeGridView extends StatefulWidget {
+  final ValueChanged<int>? onShiftDays;
   final bool embedded;
+  final VoidCallback? onPrevious, onNext;
   final AppTheme theme;
   final List<DateTime> days;
   final EventMap events;
@@ -30,6 +34,9 @@ class TimeGridView extends StatefulWidget {
   const TimeGridView({
     super.key,
     this.embedded = false,
+    this.onShiftDays,
+    this.onPrevious,
+    this.onNext,
     required this.theme,
     required this.days,
     required this.events,
@@ -47,14 +54,104 @@ class TimeGridView extends StatefulWidget {
   State<TimeGridView> createState() => _TimeGridViewState();
 }
 
-class _TimeGridViewState extends State<TimeGridView> {
+class _TimeGridViewState extends State<TimeGridView>
+    with SingleTickerProviderStateMixin {
   final _scrollController = ScrollController();
   DateTime _now = DateTime.now();
   Timer? _clock;
+  Timer? _scrollIdle;
+  double _horizontalDistance = 0;
+  bool _scrollNavigated = false;
+  double _columnWidth = 1;
+  double _continuousOffset = 0;
+  bool _shiftInProgress = false;
+
+  void _scrollDays(double delta) {
+    if (_outgoing == null && _transition.isAnimating) {
+      _continuousOffset +=
+          _transitionDrag *
+          (1 - Curves.easeOutCubic.transform(_transition.value));
+    }
+    _transition.stop();
+    _outgoing = null;
+    _transitionDrag = 0;
+    _dragOffset = 0;
+    _transition.value = 1;
+    setState(() => _continuousOffset += delta);
+    final days = (-_continuousOffset / _columnWidth).truncate();
+    if (days != 0) {
+      _continuousOffset += days * _columnWidth;
+      _shiftInProgress = true;
+      widget.onShiftDays!(days);
+    }
+  }
+
+  late final AnimationController _transition;
+  TimeGridView? _outgoing;
+  ScrollController? _outgoingScroll;
+  double _direction = 1;
+  double _dragOffset = 0;
+  double _transitionDrag = 0;
+
+  void _resetDrag() {
+    if (_dragOffset == 0) return;
+    _transitionDrag = _dragOffset;
+    _dragOffset = 0;
+    _outgoing = null;
+    _transition.forward(from: 0);
+  }
+
+  void _finishSwipe(DragEndDetails details) {
+    if (widget.onShiftDays != null) {
+      // Keep the fractional column offset where the gesture ended.
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
+    if (_horizontalDistance.abs() >= 48 || velocity.abs() >= 400) {
+      final direction = velocity.abs() >= 400 ? velocity : _horizontalDistance;
+      (direction < 0 ? widget.onNext : widget.onPrevious)?.call();
+    }
+    _horizontalDistance = 0;
+    _resetDrag();
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent ||
+        event.scrollDelta.dx.abs() <= event.scrollDelta.dy.abs()) {
+      return;
+    }
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      _scrollIdle?.cancel();
+      if (widget.onShiftDays != null) {
+        _scrollDays(-event.scrollDelta.dx);
+        return;
+      }
+      _scrollIdle = Timer(const Duration(milliseconds: 180), () {
+        _horizontalDistance = 0;
+        _scrollNavigated = false;
+      });
+      if (_scrollNavigated) return;
+      _horizontalDistance += event.scrollDelta.dx;
+      if (_horizontalDistance.abs() >= 48) {
+        _scrollNavigated = true;
+        (_horizontalDistance > 0 ? widget.onNext : widget.onPrevious)?.call();
+      }
+    });
+  }
 
   @override
   void initState() {
     super.initState();
+    _transition =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 280),
+          value: 1,
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) {
+            setState(() => _outgoing = null);
+          }
+        });
     _clock = Timer.periodic(
       const Duration(seconds: 30),
       (_) => setState(() => _now = DateTime.now()),
@@ -72,6 +169,32 @@ class _TimeGridViewState extends State<TimeGridView> {
   @override
   void didUpdateWidget(TimeGridView old) {
     super.didUpdateWidget(old);
+    if (!date_utils.isSameDay(old.days.first, widget.days.first) ||
+        old.days.length != widget.days.length) {
+      if (_shiftInProgress) {
+        _shiftInProgress = false;
+      } else {
+        _continuousOffset = 0;
+        _outgoingScroll?.dispose();
+        _outgoingScroll = ScrollController(
+          initialScrollOffset: _scrollController.hasClients
+              ? _scrollController.offset
+              : 0,
+        );
+        _outgoing = old;
+        _direction = widget.days.first.isBefore(old.days.first) ? -1 : 1;
+        _transitionDrag = _dragOffset != 0
+            ? _dragOffset
+            : (_transition.isAnimating ? _transitionDrag : 0);
+        _dragOffset = 0;
+        if (MediaQuery.disableAnimationsOf(context)) {
+          _outgoing = null;
+          _transition.value = 1;
+        } else {
+          _transition.forward(from: 0);
+        }
+      }
+    }
     final hour = widget.selectedHour;
     if (hour == null || hour == old.selectedHour) return;
     if (!_scrollController.hasClients) return;
@@ -100,20 +223,23 @@ class _TimeGridViewState extends State<TimeGridView> {
   @override
   void dispose() {
     _clock?.cancel();
+    _scrollIdle?.cancel();
+    _transition.dispose();
+    _outgoingScroll?.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Widget _draggableAllDay(CalendarEvent e) {
+  Widget _draggableAllDay(CalendarEvent e, TimeGridView view) {
     final chip = _AllDayChip(
-      theme: widget.theme,
+      theme: view.theme,
       event: e,
-      onTap: () => widget.onEventPress(e),
+      onTap: () => view.onEventPress(e),
     );
-    if (widget.onEventMove == null || !isMovableEvent(e)) return chip;
+    if (view.onEventMove == null || !isMovableEvent(e)) return chip;
     return MouseRegion(
-      onEnter: (_) => widget.onEventHover?.call(e),
-      onExit: (_) => widget.onEventHover?.call(null),
+      onEnter: (_) => view.onEventHover?.call(e),
+      onExit: (_) => view.onEventHover?.call(null),
       child: Draggable<CalendarEvent>(
         data: e,
         feedback: Material(
@@ -127,18 +253,168 @@ class _TimeGridViewState extends State<TimeGridView> {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) =>
-        _buildGrid(context, constraints.maxWidth),
-  );
+  Widget build(BuildContext context) {
+    final navigable =
+        widget.onShiftDays != null ||
+        widget.onPrevious != null ||
+        widget.onNext != null;
+    return Listener(
+      onPointerSignal: navigable ? _onPointerSignal : null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        // Horizontal drags on empty space pan dates; event drags keep their own recognizer.
+        supportedDevices: const {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.trackpad,
+        },
+        onHorizontalDragStart: navigable
+            ? (_) {
+                _horizontalDistance = 0;
+                _transitionDrag = 0;
+              }
+            : null,
+        onHorizontalDragUpdate: navigable
+            ? (details) => setState(() {
+                if (widget.onShiftDays != null) {
+                  _scrollDays(details.delta.dx);
+                  return;
+                }
+                _horizontalDistance += details.delta.dx;
+                if (!MediaQuery.disableAnimationsOf(context)) {
+                  _dragOffset = _horizontalDistance;
+                }
+              })
+            : null,
+        onHorizontalDragEnd: navigable ? _finishSwipe : null,
+        onHorizontalDragCancel: navigable
+            ? () {
+                _horizontalDistance = 0;
+                if (widget.onShiftDays == null) _resetDrag();
+              }
+            : null,
+        child: LayoutBuilder(
+          builder: (context, constraints) => ClipRect(
+            child: AnimatedBuilder(
+              animation: _transition,
+              builder: (context, _) {
+                final width = constraints.maxWidth;
+                _columnWidth = (width - _labelWidth) / widget.days.length;
+                final progress = Curves.easeOutCubic.transform(
+                  _transition.value,
+                );
+                final incoming = _outgoing != null
+                    ? (_direction * width + _transitionDrag) * (1 - progress)
+                    : _transitionDrag * (1 - progress);
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_outgoing != null)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: ExcludeSemantics(
+                            child: Transform.translate(
+                              offset: Offset(
+                                _transitionDrag * (1 - progress) -
+                                    _direction * width * progress,
+                                0,
+                              ),
+                              child: _buildGrid(
+                                context,
+                                width,
+                                view: _outgoing!,
+                                controller: _outgoingScroll!,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Transform.translate(
+                      key: const ValueKey('time-grid-current-page'),
+                      offset: Offset(
+                        widget.onShiftDays != null && _outgoing == null
+                            ? 0
+                            : incoming + _dragOffset,
+                        0,
+                      ),
+                      child: _buildGrid(
+                        context,
+                        width,
+                        view: widget,
+                        controller: _scrollController,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-  Widget _buildGrid(BuildContext context, double width) {
-    final colWidth = (width - _labelWidth) / widget.days.length;
-    final allDayByDate = widget.days
+  Widget _dateRow(
+    double columnWidth, {
+    required bool continuous,
+    required List<Widget> children,
+  }) {
+    if (!continuous) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      );
+    }
+    final offset =
+        _continuousOffset +
+        (_outgoing == null
+            ? _transitionDrag *
+                  (1 - Curves.easeOutCubic.transform(_transition.value))
+            : 0);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        children.first,
+        Expanded(
+          child: ClipRect(
+            child: OverflowBox(
+              fit: OverflowBoxFit.deferToChild,
+              alignment: Alignment.topLeft,
+              minWidth: columnWidth * (children.length - 1),
+              maxWidth: columnWidth * (children.length - 1),
+              child: Transform.translate(
+                offset: Offset(-2 * columnWidth + offset, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: children.skip(1).toList(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGrid(
+    BuildContext context,
+    double width, {
+    required TimeGridView view,
+    required ScrollController controller,
+  }) {
+    final colWidth = (width - _labelWidth) / view.days.length;
+    final continuous = view.onShiftDays != null;
+    final days = continuous
+        ? List.generate(
+            view.days.length + 4,
+            (i) => date_utils.addDays(view.days.first, i - 2),
+          )
+        : view.days;
+    final allDayByDate = days
         .map(
           (d) =>
-              (widget.events[date_utils.toDateKey(d)] ??
-                      const <CalendarEvent>[])
+              (view.events[date_utils.toDateKey(d)] ?? const <CalendarEvent>[])
                   .where((e) => e.time == null)
                   .toList(),
         )
@@ -147,11 +423,13 @@ class _TimeGridViewState extends State<TimeGridView> {
 
     return Column(
       children: [
-        if (!widget.embedded)
-          Row(
+        if (!view.embedded)
+          _dateRow(
+            colWidth,
+            continuous: continuous,
             children: [
               const SizedBox(width: _labelWidth),
-              for (final d in widget.days)
+              for (final d in days)
                 SizedBox(
                   width: colWidth,
                   child: Column(
@@ -160,7 +438,7 @@ class _TimeGridViewState extends State<TimeGridView> {
                         date_utils.weekdays[d.weekday % 7],
                         style: TextStyle(
                           fontSize: 11,
-                          color: widget.theme.textMuted,
+                          color: view.theme.textMuted,
                         ),
                       ),
                       Container(
@@ -171,7 +449,7 @@ class _TimeGridViewState extends State<TimeGridView> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: date_utils.isSameDay(d, _now)
-                              ? widget.theme.accent
+                              ? view.theme.accent
                               : null,
                         ),
                         child: Text(
@@ -180,7 +458,7 @@ class _TimeGridViewState extends State<TimeGridView> {
                             fontSize: 15,
                             color: date_utils.isSameDay(d, _now)
                                 ? Colors.white
-                                : widget.theme.text,
+                                : view.theme.text,
                           ),
                         ),
                       ),
@@ -193,39 +471,39 @@ class _TimeGridViewState extends State<TimeGridView> {
           Container(
             decoration: BoxDecoration(
               border: Border.symmetric(
-                horizontal: BorderSide(color: widget.theme.border),
+                horizontal: BorderSide(color: view.theme.border),
               ),
             ),
             constraints: const BoxConstraints(minHeight: 34),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: _dateRow(
+              colWidth,
+              continuous: continuous,
               children: [
                 Container(
                   width: _labelWidth,
                   alignment: Alignment.center,
-                  color: widget.theme.bgSecondary,
+                  color: view.theme.bgSecondary,
                   child: Text(
                     '하루종일',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 9,
-                      color: widget.theme.textSecondary,
+                      color: view.theme.textSecondary,
                     ),
                   ),
                 ),
-                for (var i = 0; i < widget.days.length; i++)
+                for (var i = 0; i < days.length; i++)
                   DragTarget<CalendarEvent>(
                     onWillAcceptWithDetails: (details) =>
-                        widget.onEventMove != null &&
+                        view.onEventMove != null &&
                         details.data.time == null &&
-                        details.data.date !=
-                            date_utils.toDateKey(widget.days[i]),
+                        details.data.date != date_utils.toDateKey(days[i]),
                     onAcceptWithDetails: (details) =>
-                        widget.onEventMove!(details.data, widget.days[i], null),
+                        view.onEventMove!(details.data, days[i], null),
                     builder: (context, candidates, _) => Container(
                       width: colWidth,
                       color: candidates.isNotEmpty
-                          ? widget.theme.accent.withValues(alpha: 0.12)
+                          ? view.theme.accent.withValues(alpha: 0.12)
                           : null,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 4,
@@ -233,7 +511,8 @@ class _TimeGridViewState extends State<TimeGridView> {
                       ),
                       child: Column(
                         children: [
-                          for (final e in allDayByDate[i]) _draggableAllDay(e),
+                          for (final e in allDayByDate[i])
+                            _draggableAllDay(e, view),
                         ],
                       ),
                     ),
@@ -243,11 +522,12 @@ class _TimeGridViewState extends State<TimeGridView> {
           ),
         Expanded(
           child: SingleChildScrollView(
-            controller: _scrollController,
+            controller: controller,
             child: Padding(
               padding: const EdgeInsets.only(top: 8, bottom: 88),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: _dateRow(
+                colWidth,
+                continuous: continuous,
                 children: [
                   SizedBox(
                     width: _labelWidth,
@@ -266,7 +546,7 @@ class _TimeGridViewState extends State<TimeGridView> {
                                         date_utils.formatHourLabel(h),
                                         style: TextStyle(
                                           fontSize: 10,
-                                          color: widget.theme.textMuted,
+                                          color: view.theme.textMuted,
                                         ),
                                       ),
                                     ),
@@ -275,23 +555,24 @@ class _TimeGridViewState extends State<TimeGridView> {
                       ],
                     ),
                   ),
-                  for (final d in widget.days)
+                  for (final d in days)
                     _DayColumn(
-                      theme: widget.theme,
+                      key: ValueKey(date_utils.toDateKey(d)),
+                      theme: view.theme,
                       day: d,
                       width: colWidth,
                       now: _now,
-                      events: widget.events,
-                      onSlotPress: widget.onSlotPress,
-                      onEventPress: widget.onEventPress,
-                      onEventMove: widget.onEventMove,
-                      onEventResize: widget.onEventResize,
-                      onRangeCreate: widget.onRangeCreate,
-                      onEventHover: widget.onEventHover,
+                      events: view.events,
+                      onSlotPress: view.onSlotPress,
+                      onEventPress: view.onEventPress,
+                      onEventMove: view.onEventMove,
+                      onEventResize: view.onEventResize,
+                      onRangeCreate: view.onRangeCreate,
+                      onEventHover: view.onEventHover,
                       selectedHour:
-                          widget.selectedDate != null &&
-                              date_utils.isSameDay(d, widget.selectedDate!)
-                          ? widget.selectedHour
+                          view.selectedDate != null &&
+                              date_utils.isSameDay(d, view.selectedDate!)
+                          ? view.selectedHour
                           : null,
                     ),
                 ],
@@ -372,6 +653,7 @@ class _DayColumn extends StatefulWidget {
   final int? selectedHour;
 
   const _DayColumn({
+    super.key,
     required this.theme,
     required this.day,
     required this.width,

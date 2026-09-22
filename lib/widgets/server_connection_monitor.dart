@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../services/desktop_notifications.dart';
 import '../services/server_connection_notifications.dart';
 
 /// Keeps connection monitoring alive across all app pages and routes.
@@ -45,6 +46,7 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
 
   OverlayEntry? _banner;
   bool _bannerDismissed = false;
+  bool _nativeWarningShown = false;
 
   void _showBanner() {
     if (_banner != null || _bannerDismissed) return;
@@ -156,6 +158,8 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
       if (wasUnavailable) {
         await ServerConnectionNotifications.showReconnected();
       }
+      if (!mounted) return;
+      _nativeWarningShown = false;
       _bannerDismissed = false;
       _hideBanner();
       final route = _connectionRoute;
@@ -166,9 +170,12 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
       _lastAvailability = false;
       ServerConnectionMonitor.available.value = false;
       if (wasConnected) {
-        await ServerConnectionNotifications.showDisconnected();
+        _nativeWarningShown =
+            await ServerConnectionNotifications.showDisconnected();
       }
-      if (_foreground) {
+      if (!mounted) return;
+      if (_foreground &&
+          !(DesktopNotifications.supported && _nativeWarningShown)) {
         _quiet ? _showBanner() : _showConnectionAlert();
       }
     } catch (_) {

@@ -1,3 +1,5 @@
+import 'services/desktop_notifications.dart';
+
 import 'dart:async';
 import 'dart:ui';
 
@@ -244,6 +246,28 @@ class _CalendarHomeState extends State<CalendarHome>
   ViewMode _view = ViewMode.month;
   bool _showPersonalCalendar = true;
   DateTime _anchorDate = DateTime.now();
+  DateTime? _rollingWeekStart;
+  List<DateTime> get _visibleWeekDays => List.generate(7,
+      (i) => date_utils.addDays(_rollingWeekStart ?? date_utils.startOfWeek(_anchorDate), i));
+
+  void _changeView(ViewMode view) {
+    setState(() {
+      _view = view;
+      _rollingWeekStart = null;
+    });
+  }
+
+  void _shiftVisibleDays(int days) {
+    setState(() {
+      if (_view == ViewMode.week) {
+        _rollingWeekStart = date_utils.addDays(_visibleWeekDays.first, days);
+      }
+      _anchorDate = date_utils.addDays(_anchorDate, days);
+      _selectedKey = date_utils.toDateKey(_anchorDate);
+    });
+    _refreshHolidays();
+  }
+
   String _selectedKey = date_utils.toDateKey(DateTime.now());
   bool _showHolidays = DisplaySettings.instance.enabled(
     DisplaySetting.holidays,
@@ -265,7 +289,7 @@ class _CalendarHomeState extends State<CalendarHome>
   VoidCallback _collapseAgenda = () {};
   CalendarEvent? _hoveredEvent;
   String? _lastEventId;
-  int _focusHour = 9;
+  static const _defaultEventHour = 9;
 
   @override
   void initState() {
@@ -329,14 +353,29 @@ class _CalendarHomeState extends State<CalendarHome>
     );
   }
 
+  Future<void> _showStatusNotice(int id, String title, String message) async {
+    final sent = await DesktopNotifications.show(
+      id: id,
+      title: title,
+      body: message,
+    );
+    if (!mounted || sent) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
   void _showEventSyncStatus() {
     if (!mounted ||
         widget.user == null ||
         _eventStore.syncSucceeded.value != false) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('일정은 이 기기에 저장됐습니다. 서버 연결 후 다른 기기에 동기화됩니다.')),
+    unawaited(
+      _showStatusNotice(
+        4201,
+        '일정 동기화 대기',
+        '일정은 이 기기에 저장됐습니다. 서버 연결 후 다른 기기에 동기화됩니다.',
+      ),
     );
   }
 
@@ -346,8 +385,12 @@ class _CalendarHomeState extends State<CalendarHome>
         AccountPreferences.instance.syncSucceeded.value != false) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('설정은 이 기기에 저장됐습니다. 서버 연결 후 계정에 동기화됩니다.')),
+    unawaited(
+      _showStatusNotice(
+        4202,
+        '설정 동기화 대기',
+        '설정은 이 기기에 저장됐습니다. 서버 연결 후 계정에 동기화됩니다.',
+      ),
     );
   }
 
@@ -636,18 +679,15 @@ class _CalendarHomeState extends State<CalendarHome>
       });
       await _refreshLiveActivity();
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('백업 데이터를 복원했습니다.')));
+        await _showStatusNotice(4203, '복원 완료', '백업 데이터를 복원했습니다.');
       }
     } on FormatException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
+        await _showStatusNotice(4203, '복원 실패', error.message);
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('백업 파일을 복원하지 못했습니다.')));
+        await _showStatusNotice(4203, '복원 실패', '백업 파일을 복원하지 못했습니다.');
       }
     }
   }
@@ -662,8 +702,10 @@ class _CalendarHomeState extends State<CalendarHome>
       await DisplaySettings.instance.setEnabled(setting, value);
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('표시 설정을 저장하지 못했습니다. 다시 시도해 주세요.')),
+      await _showStatusNotice(
+        4204,
+        '설정 저장 실패',
+        '표시 설정을 저장하지 못했습니다. 다시 시도해 주세요.',
       );
     }
   }
@@ -1066,7 +1108,8 @@ class _CalendarHomeState extends State<CalendarHome>
       case ViewMode.month:
         return '${_anchorDate.year}. ${_anchorDate.month}.';
       case ViewMode.week:
-        return date_utils.formatWeekTitle(_anchorDate);
+        final days = _visibleWeekDays;
+        return '${days.first.month}월 ${days.first.day}일 - ${days.last.month}월 ${days.last.day}일';
       case ViewMode.list:
         return '전체 일정';
       case ViewMode.day:
@@ -1080,6 +1123,7 @@ class _CalendarHomeState extends State<CalendarHome>
         _anchorDate = date_utils.addMonths(_anchorDate, -1);
       }
       if (_view == ViewMode.week) {
+        _rollingWeekStart = date_utils.addDays(_visibleWeekDays.first, -7);
         _anchorDate = date_utils.addDays(_anchorDate, -7);
       }
       if (_view == ViewMode.day) {
@@ -1095,6 +1139,7 @@ class _CalendarHomeState extends State<CalendarHome>
         _anchorDate = date_utils.addMonths(_anchorDate, 1);
       }
       if (_view == ViewMode.week) {
+        _rollingWeekStart = date_utils.addDays(_visibleWeekDays.first, 7);
         _anchorDate = date_utils.addDays(_anchorDate, 7);
       }
       if (_view == ViewMode.day) {
@@ -1206,11 +1251,12 @@ class _CalendarHomeState extends State<CalendarHome>
     setState(() {
       _selectedKey = date_utils.toDateKey(date);
       _anchorDate = date;
+      _rollingWeekStart = null;
     });
     _refreshHolidays();
   }
 
-  /// Arrow keys: move the selected day, and the selected hour in time views.
+  /// Left/right move one visible page in time views.
   void _navigate(int dx, int dy) {
     switch (_view) {
       case ViewMode.month:
@@ -1221,11 +1267,9 @@ class _CalendarHomeState extends State<CalendarHome>
           ),
         );
       case ViewMode.week:
+        if (dx != 0) _shiftVisibleDays(dx * 7);
       case ViewMode.day:
-        if (dx != 0) _selectDay(date_utils.addDays(_anchorDate, dx));
-        if (dy != 0) {
-          setState(() => _focusHour = (_focusHour + dy).clamp(0, 23));
-        }
+        if (dx != 0) _shiftVisibleDays(dx);
       case ViewMode.list:
         break;
     }
@@ -1239,7 +1283,7 @@ class _CalendarHomeState extends State<CalendarHome>
           : _anchorDate,
       _view == ViewMode.month
           ? null
-          : '${_focusHour.toString().padLeft(2, '0')}:00',
+          : '${_defaultEventHour.toString().padLeft(2, '0')}:00',
     );
   }
 
@@ -1271,7 +1315,7 @@ class _CalendarHomeState extends State<CalendarHome>
       event,
       target,
       time: inTimeView && event.time != null
-          ? '${_focusHour.toString().padLeft(2, '0')}:00'
+          ? '${_defaultEventHour.toString().padLeft(2, '0')}:00'
           : null,
       copy: true,
     );
@@ -1353,28 +1397,28 @@ class _CalendarHomeState extends State<CalendarHome>
         'month',
         CupertinoIcons.calendar,
         'M',
-        () => setState(() => _view = ViewMode.month),
+        () => _changeView(ViewMode.month),
       ),
       (
         '주간 보기',
         'week',
         CupertinoIcons.calendar,
         'W',
-        () => setState(() => _view = ViewMode.week),
+        () => _changeView(ViewMode.week),
       ),
       (
         '일간 보기',
         'day',
         CupertinoIcons.calendar,
         'D',
-        () => setState(() => _view = ViewMode.day),
+        () => _changeView(ViewMode.day),
       ),
       (
         '목록 보기',
         'list',
         CupertinoIcons.list_bullet,
         'L',
-        () => setState(() => _view = ViewMode.list),
+        () => _changeView(ViewMode.list),
       ),
       ('설정', 'settings', CupertinoIcons.gear, null, _openSettings),
       (
@@ -1446,6 +1490,7 @@ class _CalendarHomeState extends State<CalendarHome>
   void _goToday() {
     setState(() {
       _anchorDate = DateTime.now();
+      _rollingWeekStart = null;
       _selectedKey = date_utils.toDateKey(_anchorDate);
     });
     _refreshHolidays();
@@ -1728,9 +1773,11 @@ class _CalendarHomeState extends State<CalendarHome>
                 account: widget.user?.email ?? '게스트',
                 userName: widget.user?.name ?? '',
                 selectedDate: _anchorDate,
+                visibleDays: _view == ViewMode.week ? _visibleWeekDays : null,
                 onDateSelected: (date) {
                   setState(() {
                     _anchorDate = date;
+      _rollingWeekStart = null;
                     _selectedKey = date_utils.toDateKey(date);
                   });
                   _refreshHolidays();
@@ -1807,7 +1854,7 @@ class _CalendarHomeState extends State<CalendarHome>
                   ),
                 ],
                 view: _view,
-                onViewChanged: (view) => setState(() => _view = view),
+                onViewChanged: _changeView,
                 onPrevious: _goPrev,
                 onNext: _goNext,
                 onToday: _goToday,
@@ -1848,6 +1895,7 @@ class _CalendarHomeState extends State<CalendarHome>
                     onDateSelected: (date) {
                       setState(() {
                         _anchorDate = date;
+      _rollingWeekStart = null;
                         _selectedKey = date_utils.toDateKey(date);
                       });
                       _refreshHolidays();
@@ -1869,7 +1917,7 @@ class _CalendarHomeState extends State<CalendarHome>
                       ),
                     ),
                     view: _view,
-                    onViewChanged: (view) => setState(() => _view = view),
+                    onViewChanged: _changeView,
                   ),
                   Expanded(
                     child: !store.loaded
@@ -1952,8 +2000,11 @@ class _CalendarHomeState extends State<CalendarHome>
         );
       case ViewMode.week:
         return TimeGridView(
+          onShiftDays: _shiftVisibleDays,
+          onPrevious: _goPrev,
+          onNext: _goNext,
           theme: theme,
-          days: date_utils.getWeekDays(_anchorDate),
+          days: _visibleWeekDays,
           events: expanded,
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
@@ -1969,10 +2020,12 @@ class _CalendarHomeState extends State<CalendarHome>
           onEventHover: _onEventHover,
           onRangeCreate: _createRange,
           selectedDate: _anchorDate,
-          selectedHour: _focusHour,
         );
       case ViewMode.day:
         return TimeGridView(
+          onShiftDays: _shiftVisibleDays,
+          onPrevious: _goPrev,
+          onNext: _goNext,
           theme: theme,
           days: [_anchorDate],
           events: expanded,
@@ -1990,7 +2043,6 @@ class _CalendarHomeState extends State<CalendarHome>
           onEventHover: _onEventHover,
           onRangeCreate: _createRange,
           selectedDate: _anchorDate,
-          selectedHour: _focusHour,
         );
       case ViewMode.list:
         return EventListView(
