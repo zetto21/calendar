@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform, kIsWeb;
 
 import '../logic/date_utils.dart' as dates;
 import '../models/calendar_event.dart';
@@ -10,6 +8,7 @@ import '../theme/app_theme.dart';
 import 'month_view.dart';
 import '../widgets/liquid_glass.dart';
 import 'time_grid_view.dart';
+import '../platform.dart';
 
 /// Calendar and selected-day agenda share the available screen height.
 class MonthAgenda extends StatefulWidget {
@@ -107,9 +106,7 @@ class _MonthAgendaState extends State<MonthAgenda> {
         7;
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (!kIsWeb &&
-            defaultTargetPlatform == TargetPlatform.macOS &&
-            constraints.maxWidth >= 760) {
+        if (useDesktopLayout && constraints.maxWidth >= 760) {
           return Row(
             children: [
               Expanded(
@@ -513,7 +510,7 @@ class _AgendaRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SizedBox(
-                  width: defaultTargetPlatform == TargetPlatform.macOS
+                  width: useDesktopLayout
                       ? 100 * MediaQuery.textScalerOf(context).scale(12) / 12
                       : 62,
                   child: Column(

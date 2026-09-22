@@ -20,7 +20,9 @@ class TimeGridView extends StatefulWidget {
   final ValueChanged<CalendarEvent> onEventPress;
   final void Function(CalendarEvent event, DateTime date, String? time)?
   onEventMove;
-  final void Function(CalendarEvent event, int duration)? onEventResize;
+  final void Function(CalendarEvent event, String time, int duration)?
+  onEventResize;
+  final void Function(DateTime date, String time, int duration)? onRangeCreate;
   final ValueChanged<CalendarEvent?>? onEventHover;
   final DateTime? selectedDate;
   final int? selectedHour;
@@ -35,6 +37,7 @@ class TimeGridView extends StatefulWidget {
     required this.onEventPress,
     this.onEventMove,
     this.onEventResize,
+    this.onRangeCreate,
     this.onEventHover,
     this.selectedDate,
     this.selectedHour,
@@ -283,6 +286,7 @@ class _TimeGridViewState extends State<TimeGridView> {
                       onEventPress: widget.onEventPress,
                       onEventMove: widget.onEventMove,
                       onEventResize: widget.onEventResize,
+                      onRangeCreate: widget.onRangeCreate,
                       onEventHover: widget.onEventHover,
                       selectedHour:
                           widget.selectedDate != null &&
@@ -361,7 +365,9 @@ class _DayColumn extends StatefulWidget {
   final ValueChanged<CalendarEvent> onEventPress;
   final void Function(CalendarEvent event, DateTime date, String? time)?
   onEventMove;
-  final void Function(CalendarEvent event, int duration)? onEventResize;
+  final void Function(CalendarEvent event, String time, int duration)?
+  onEventResize;
+  final void Function(DateTime date, String time, int duration)? onRangeCreate;
   final ValueChanged<CalendarEvent?>? onEventHover;
   final int? selectedHour;
 
@@ -375,6 +381,7 @@ class _DayColumn extends StatefulWidget {
     required this.onEventPress,
     this.onEventMove,
     this.onEventResize,
+    this.onRangeCreate,
     this.onEventHover,
     this.selectedHour,
   });
@@ -385,6 +392,68 @@ class _DayColumn extends StatefulWidget {
 
 class _DayColumnState extends State<_DayColumn> {
   final _columnKey = GlobalKey();
+  int? _createFrom, _createTo; // minutes, while dragging on empty space
+  int? _dropMinute; // snapped start of an event being dragged over this day
+  int _dropDuration = 60;
+
+  /// Notion-style lanes: overlapping events sit side by side.
+  Map<String, (int lane, int lanes)> _layout(List<CalendarEvent> events) {
+    final sorted = [...events]
+      ..sort(
+        (a, b) => date_utils
+            .minutesFromTime(a.time!)
+            .compareTo(date_utils.minutesFromTime(b.time!)),
+      );
+    final result = <String, (int, int)>{};
+    var cluster = <CalendarEvent>[];
+    var clusterEnd = 0;
+    void flush() {
+      if (cluster.isEmpty) return;
+      final laneEnds = <int>[];
+      final lanes = <String, int>{};
+      for (final e in cluster) {
+        final start = date_utils.minutesFromTime(e.time!);
+        var lane = laneEnds.indexWhere((end) => end <= start);
+        if (lane == -1) {
+          lane = laneEnds.length;
+          laneEnds.add(0);
+        }
+        laneEnds[lane] = start + (e.duration < 30 ? 30 : e.duration);
+        lanes[e.id] = lane;
+      }
+      for (final e in cluster) {
+        result[e.id] = (lanes[e.id]!, laneEnds.length);
+      }
+      cluster = [];
+    }
+
+    for (final e in sorted) {
+      final start = date_utils.minutesFromTime(e.time!);
+      if (cluster.isNotEmpty && start >= clusterEnd) flush();
+      cluster.add(e);
+      final end = start + (e.duration < 30 ? 30 : e.duration);
+      if (cluster.length == 1 || end > clusterEnd) clusterEnd = end;
+    }
+    flush();
+    return result;
+  }
+
+  int _minuteAt(double y) =>
+      (((y / _hourHeight * 60) / 15).round() * 15).clamp(0, 24 * 60);
+
+  void _finishCreate() {
+    final from = _createFrom, to = _createTo;
+    setState(() => _createFrom = _createTo = null);
+    if (from == null || to == null || widget.onRangeCreate == null) return;
+    final start = from < to ? from : to;
+    final end = from < to ? to : from;
+    if (end - start < 15) return;
+    widget.onRangeCreate!(
+      widget.day,
+      date_utils.timeFromMinutes(start.clamp(0, 24 * 60 - 15)),
+      end - start,
+    );
+  }
 
   /// Snap a dropped block's top edge to 15-minute steps.
   String _timeAt(Offset globalTopLeft) {
@@ -404,10 +473,23 @@ class _DayColumnState extends State<_DayColumn> {
         .toList();
     final isToday = date_utils.isSameDay(day, widget.now);
     final nowMinutes = widget.now.hour * 60 + widget.now.minute;
+    final lanes = _layout(timedEvents);
 
     return DragTarget<CalendarEvent>(
       onWillAcceptWithDetails: (details) => widget.onEventMove != null,
+      onMove: (details) {
+        if (details.data.time == null) return;
+        final minute = date_utils.minutesFromTime(_timeAt(details.offset));
+        if (minute != _dropMinute) {
+          setState(() {
+            _dropMinute = minute;
+            _dropDuration = details.data.duration;
+          });
+        }
+      },
+      onLeave: (_) => setState(() => _dropMinute = null),
       onAcceptWithDetails: (details) {
+        setState(() => _dropMinute = null);
         if (details.data.time == null) return;
         widget.onEventMove!(details.data, day, _timeAt(details.offset));
       },
@@ -416,36 +498,114 @@ class _DayColumnState extends State<_DayColumn> {
         width: widget.width,
         child: Stack(
           children: [
-            Column(
-              children: [
-                for (final h in date_utils.hoursOfDay)
-                  InkWell(
-                    onTap: () => widget.onSlotPress(day, h),
-                    child: Container(
-                      height: _hourHeight,
-                      decoration: BoxDecoration(
-                        color: widget.selectedHour == h
-                            ? theme.accent.withValues(alpha: 0.12)
-                            : (candidates.isNotEmpty
-                                  ? theme.accent.withValues(alpha: 0.04)
-                                  : null),
-                        border: Border(
-                          top: BorderSide(color: theme.border, width: 0.5),
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragStart: widget.onRangeCreate == null
+                  ? null
+                  : (d) => setState(() {
+                      _createFrom = _minuteAt(d.localPosition.dy);
+                      _createTo = _createFrom;
+                    }),
+              onVerticalDragUpdate: widget.onRangeCreate == null
+                  ? null
+                  : (d) => setState(
+                      () => _createTo = _minuteAt(d.localPosition.dy),
+                    ),
+              onVerticalDragEnd: widget.onRangeCreate == null
+                  ? null
+                  : (_) => _finishCreate(),
+              onVerticalDragCancel: () =>
+                  setState(() => _createFrom = _createTo = null),
+              child: Column(
+                children: [
+                  for (final h in date_utils.hoursOfDay)
+                    InkWell(
+                      onTap: () => widget.onSlotPress(day, h),
+                      child: Container(
+                        height: _hourHeight,
+                        decoration: BoxDecoration(
+                          color: widget.selectedHour == h
+                              ? theme.accent.withValues(alpha: 0.12)
+                              : (candidates.isNotEmpty
+                                    ? theme.accent.withValues(alpha: 0.04)
+                                    : null),
+                          border: Border(
+                            top: BorderSide(color: theme.border, width: 0.5),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
+            if (_createFrom != null && _createTo != null)
+              Positioned(
+                top:
+                    (_createFrom! < _createTo! ? _createFrom! : _createTo!) /
+                    60 *
+                    _hourHeight,
+                left: 2,
+                right: 12,
+                height: ((_createTo! - _createFrom!).abs() / 60 * _hourHeight)
+                    .clamp(4, double.infinity)
+                    .toDouble(),
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.accent.withValues(alpha: 0.25),
+                      border: Border.all(color: theme.accent),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: Text(
+                      '${date_utils.formatTimeLabel(date_utils.timeFromMinutes((_createFrom! < _createTo! ? _createFrom! : _createTo!).clamp(0, 1439)))} · ${date_utils.formatDurationLabel((_createTo! - _createFrom!).abs())}',
+                      style: TextStyle(fontSize: 11, color: theme.text),
+                    ),
+                  ),
+                ),
+              ),
+            if (_dropMinute != null)
+              Positioned(
+                top: _dropMinute! / 60 * _hourHeight,
+                left: 2,
+                right: 12,
+                height: (_dropDuration / 60 * _hourHeight)
+                    .clamp(22, double.infinity)
+                    .toDouble(),
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: theme.accent.withValues(alpha: 0.18),
+                      border: Border.all(color: theme.accent, width: 1.5),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: Text(
+                      date_utils.formatTimeLabel(
+                        date_utils.timeFromMinutes(_dropMinute!),
+                      ),
+                      style: TextStyle(fontSize: 11, color: theme.text),
+                    ),
+                  ),
+                ),
+              ),
             for (final e in timedEvents)
               _EventBlock(
+                key: ValueKey(e.id),
                 theme: theme,
                 event: e,
+                left:
+                    2 +
+                    (lanes[e.id]?.$1 ?? 0) *
+                        (widget.width - 14) /
+                        (lanes[e.id]?.$2 ?? 1),
+                width: (widget.width - 14) / (lanes[e.id]?.$2 ?? 1),
                 onTap: () => widget.onEventPress(e),
                 movable: widget.onEventMove != null && isMovableEvent(e),
                 onResize: widget.onEventResize == null
                     ? null
-                    : (duration) => widget.onEventResize!(e, duration),
+                    : (time, duration) =>
+                          widget.onEventResize!(e, time, duration),
                 onHover: widget.onEventHover,
               ),
             if (isToday)
@@ -466,13 +626,17 @@ class _EventBlock extends StatefulWidget {
   final AppTheme theme;
   final CalendarEvent event;
   final VoidCallback onTap;
+  final double left, width;
   final bool movable;
-  final ValueChanged<int>? onResize;
+  final void Function(String time, int duration)? onResize;
   final ValueChanged<CalendarEvent?>? onHover;
   const _EventBlock({
+    super.key,
     required this.theme,
     required this.event,
     required this.onTap,
+    required this.left,
+    required this.width,
     this.movable = false,
     this.onResize,
     this.onHover,
@@ -483,16 +647,26 @@ class _EventBlock extends StatefulWidget {
 }
 
 class _EventBlockState extends State<_EventBlock> {
-  /// Pixels the bottom edge has been dragged while resizing.
-  double _resizePx = 0;
+  /// Pixels the top / bottom edge has been dragged while resizing.
+  double _topPx = 0, _bottomPx = 0;
 
-  int get _duration => (widget.event.duration + _resizePx / _hourHeight * 60)
-      .round()
-      .clamp(15, 24 * 60);
+  bool get _resizing => _topPx != 0 || _bottomPx != 0;
+
+  int _snap(double px) => (px / _hourHeight * 60 / 15).round() * 15;
+
+  /// Start and duration in minutes after applying the in-flight resize.
+  (int start, int duration) get _range {
+    final start0 = date_utils.minutesFromTime(widget.event.time!);
+    final end0 = start0 + widget.event.duration;
+    final start = (start0 + _snap(_topPx)).clamp(0, 24 * 60 - 15);
+    final end = (end0 + _snap(_bottomPx)).clamp(start + 15, 24 * 60);
+    return (start, end - start);
+  }
 
   Widget _body(double height, {double? width}) {
     final event = widget.event;
     final tone = eventCardTone(colorFromHex(event.color), widget.theme);
+    final (start, duration) = _range;
     return Container(
       width: width,
       padding: EdgeInsets.symmetric(
@@ -502,6 +676,9 @@ class _EventBlockState extends State<_EventBlock> {
       decoration: BoxDecoration(
         color: tone.background,
         borderRadius: BorderRadius.circular(3),
+        border: _resizing
+            ? Border.all(color: widget.theme.accent, width: 1.5)
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,7 +694,14 @@ class _EventBlockState extends State<_EventBlock> {
               color: tone.title,
             ),
           ),
-          if (height > 38 &&
+          if (_resizing && height > 34)
+            Text(
+              '${date_utils.formatTimeLabel(date_utils.timeFromMinutes(start))} · ${date_utils.formatDurationLabel(duration)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: tone.detail),
+            )
+          else if (height > 38 &&
               event.location != null &&
               event.location!.isNotEmpty)
             Text(
@@ -531,12 +715,42 @@ class _EventBlockState extends State<_EventBlock> {
     );
   }
 
+  Widget _handle({required bool top}) => Positioned(
+    left: 0,
+    right: 0,
+    top: top ? 0 : null,
+    bottom: top ? null : 0,
+    height: 8,
+    child: MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragUpdate: (d) => setState(() {
+          if (top) {
+            _topPx += d.delta.dy;
+          } else {
+            _bottomPx += d.delta.dy;
+          }
+        }),
+        onVerticalDragEnd: (_) {
+          final (start, duration) = _range;
+          final changed = _resizing;
+          setState(() => _topPx = _bottomPx = 0);
+          if (changed) {
+            widget.onResize!(date_utils.timeFromMinutes(start), duration);
+          }
+        },
+        onVerticalDragCancel: () => setState(() => _topPx = _bottomPx = 0),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final event = widget.event;
-    final startMin = date_utils.minutesFromTime(event.time!);
-    final top = (startMin / 60) * _hourHeight;
-    final height = (((_duration) / 60) * _hourHeight)
+    final (start, duration) = _range;
+    final top = (start / 60) * _hourHeight;
+    final height = ((duration / 60) * _hourHeight)
         .clamp(22, double.infinity)
         .toDouble();
     Widget content = InkWell(onTap: widget.onTap, child: _body(height));
@@ -552,9 +766,9 @@ class _EventBlockState extends State<_EventBlock> {
             child: Opacity(
               opacity: 0.85,
               child: SizedBox(
-                width: 140,
+                width: widget.width,
                 height: height,
-                child: _body(height, width: 140),
+                child: _body(height, width: widget.width),
               ),
             ),
           ),
@@ -565,33 +779,16 @@ class _EventBlockState extends State<_EventBlock> {
     }
     return Positioned(
       top: top,
-      left: 2,
-      right: 12,
+      left: widget.left,
+      width: widget.width,
       height: height,
       child: Stack(
         children: [
           Positioned.fill(child: content),
-          if (widget.movable && widget.onResize != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 8,
-              child: MouseRegion(
-                cursor: SystemMouseCursors.resizeUpDown,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onVerticalDragUpdate: (d) =>
-                      setState(() => _resizePx += d.delta.dy),
-                  onVerticalDragEnd: (_) {
-                    final snapped = (_duration / 15).round() * 15;
-                    setState(() => _resizePx = 0);
-                    widget.onResize!(snapped.clamp(15, 24 * 60));
-                  },
-                  onVerticalDragCancel: () => setState(() => _resizePx = 0),
-                ),
-              ),
-            ),
+          if (widget.movable && widget.onResize != null) ...[
+            _handle(top: true),
+            _handle(top: false),
+          ],
         ],
       ),
     );

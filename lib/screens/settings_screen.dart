@@ -3,11 +3,12 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform, kIsWeb;
+    show defaultTargetPlatform, TargetPlatform;
 
 import '../services/backup_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/liquid_glass.dart';
+import '../platform.dart';
 
 class SettingsScreen extends StatelessWidget {
   final AppTheme theme;
@@ -30,8 +31,8 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (_isAndroid) return _buildAndroid(context);
     if (_isMac) return _buildMac(context);
+    if (_isAndroid) return _buildAndroid(context);
     return CupertinoTheme(
       data: CupertinoThemeData(
         brightness: theme.isDark ? Brightness.dark : Brightness.light,
@@ -217,7 +218,7 @@ class SettingsScreen extends StatelessWidget {
   }
 
   bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
-  bool get _isMac => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+  bool get _isMac => useDesktopLayout;
 
   Widget _buildMac(BuildContext context) {
     _MacRow info(String title, String message, IconData icon, Color color) =>
@@ -694,7 +695,7 @@ class _MacSection {
   const _MacSection(this.title, this.icon, this.color, this.rows);
 }
 
-/// System Settings-style layout: section sidebar plus a grouped detail pane.
+/// Compact desktop settings panel matching the event editor.
 class _MacSettings extends StatefulWidget {
   final AppTheme theme;
   final List<_MacSection> sections;
@@ -706,8 +707,6 @@ class _MacSettings extends StatefulWidget {
 }
 
 class _MacSettingsState extends State<_MacSettings> {
-  int _selected = 0;
-
   Widget _badge(IconData icon, Color color, {double size = 22}) => Container(
     width: size,
     height: size,
@@ -721,135 +720,82 @@ class _MacSettingsState extends State<_MacSettings> {
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
-    final index = _selected.clamp(0, widget.sections.length - 1);
-    final section = widget.sections[index];
-    return Scaffold(
-      backgroundColor: theme.bg,
-      body: Row(
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.border),
+        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 32)],
+      ),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 220,
-            decoration: BoxDecoration(
-              color: theme.surface,
-              border: Border(right: BorderSide(color: theme.border)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: '닫기',
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: Icon(CupertinoIcons.back, color: theme.accent),
-                      ),
-                      Text(
-                        '설정',
-                        style: TextStyle(
-                          color: theme.text,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '설정',
+                  style: TextStyle(
+                    color: theme.text,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    children: [
-                      for (var i = 0; i < widget.sections.length; i++)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: Material(
-                            color: i == index
-                                ? theme.accent.withValues(alpha: 0.16)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(8),
-                              onTap: () => setState(() => _selected = i),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                child: Row(
-                                  children: [
-                                    _badge(
-                                      widget.sections[i].icon,
-                                      widget.sections[i].color,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        widget.sections[i].title,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: theme.text,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+              ),
+              IconButton(
+                tooltip: '닫기 · esc',
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: Icon(
+                  CupertinoIcons.xmark,
+                  size: 16,
+                  color: theme.textMuted,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(32, 28, 32, 32),
-              children: [
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          section.title,
-                          style: TextStyle(
-                            color: theme.text,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                          ),
+          const SizedBox(height: 6),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final section in widget.sections) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+                      child: Text(
+                        section.title,
+                        style: TextStyle(
+                          color: theme.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
-                        const SizedBox(height: 18),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: theme.surface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: theme.border),
-                          ),
-                          child: Column(
-                            children: [
-                              for (var i = 0; i < section.rows.length; i++) ...[
-                                if (i > 0)
-                                  Divider(
-                                    height: 1,
-                                    indent: 52,
-                                    color: theme.border,
-                                  ),
-                                _row(section.rows[i]),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              ],
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: theme.border),
+                      ),
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < section.rows.length; i++) ...[
+                            if (i > 0)
+                              Divider(
+                                height: 1,
+                                indent: 52,
+                                color: theme.border,
+                              ),
+                            _row(section.rows[i]),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                ],
+              ),
             ),
           ),
         ],

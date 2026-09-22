@@ -126,10 +126,6 @@ class _LoginScreenState extends State<LoginScreen>
 
   Future<void> _socialLogin(SocialProvider provider) async {
     if (_socialBusy != null || !_enabledProviders.contains(provider)) return;
-    if (kIsWeb) {
-      setState(() => _message = '간편 로그인은 현재 iOS·Android 앱에서 지원합니다.');
-      return;
-    }
     setState(() {
       _socialBusy = provider;
       _message = '';
@@ -145,6 +141,7 @@ class _LoginScreenState extends State<LoginScreen>
       final code = callback.queryParameters['code'];
       if (code == null) throw AuthException('로그인 코드를 받지 못했습니다.');
       final user = await AuthService.instance.exchangeSocialCode(code);
+      if (!mounted) return;
       widget.onAuthenticated(user);
     } catch (error) {
       if (!mounted) return;
@@ -199,14 +196,15 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   static bool get _isDesktop =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.macOS ||
-          defaultTargetPlatform == TargetPlatform.windows ||
-          defaultTargetPlatform == TargetPlatform.linux);
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux;
 
   @override
   Widget build(BuildContext context) {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) {
+    // The web build uses the same website-style split login as macOS.
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.macOS) {
       return _buildMacLogin();
     }
     final form = _emailFormVisible
@@ -246,7 +244,8 @@ class _LoginScreenState extends State<LoginScreen>
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, viewport) {
-            final wide = viewport.maxWidth >= 900;
+            // The web shows only the sign-in form, without the brand panel.
+            final wide = !kIsWeb && viewport.maxWidth >= 900;
             return Row(
               children: [
                 if (wide) Expanded(child: MacosLoginBrand(theme: theme)),

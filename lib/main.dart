@@ -16,6 +16,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'logic/date_utils.dart' as date_utils;
 import 'logic/event_dedup.dart';
+import 'logic/event_details.dart' show wallTimeToDate;
+import 'logic/quick_add.dart';
 import 'logic/recurrence.dart';
 import 'models/calendar_event.dart';
 import 'native/eventkit.dart';
@@ -39,10 +41,12 @@ import 'theme/app_theme.dart';
 import 'screens/month_agenda.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/top_bar.dart';
+import 'widgets/command_palette.dart';
 import 'widgets/macos_calendar_shell.dart';
 import 'widgets/imported_calendar_group.dart';
 import 'widgets/liquid_glass.dart';
 import 'widgets/server_connection_monitor.dart';
+import 'platform.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -132,7 +136,7 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void initState() {
     super.initState();
-    _loading = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+    _loading = useDesktopLayout;
     unawaited(MacosWindow.showCalendar(false));
     unawaited(_restoreSession());
   }
@@ -259,6 +263,9 @@ class _CalendarHomeState extends State<CalendarHome>
   late EventStore _eventStore;
   Timer? _eventSyncTimer;
   VoidCallback _collapseAgenda = () {};
+  CalendarEvent? _hoveredEvent;
+  String? _lastEventId;
+  int _focusHour = 9;
 
   @override
   void initState() {
@@ -1097,6 +1104,345 @@ class _CalendarHomeState extends State<CalendarHome>
     _refreshHolidays();
   }
 
+  void _onEventHover(CalendarEvent? event) {
+    _hoveredEvent = event;
+    if (event != null) _lastEventId = event.seriesId ?? event.id;
+  }
+
+  /// Keyboard target: the event under the mouse, else the one last touched
+  /// (hovered, clicked, dragged or moved), so repeated shortcuts keep working.
+  CalendarEvent? _targetEvent() {
+    final hovered = _hoveredEvent;
+    if (hovered != null) return hovered;
+    final id = _lastEventId;
+    if (id == null) return null;
+    for (final list in context.read<EventStore>().events.values) {
+      for (final event in list) {
+        if (event.id == id) return event;
+      }
+    }
+    return null;
+  }
+
+  CalendarEvent _seriesSource(EventStore store, CalendarEvent event) {
+    final seriesId = event.seriesId;
+    if (seriesId == null) return event;
+    return store.events.values
+        .expand((e) => e)
+        .firstWhere((e) => e.id == seriesId, orElse: () => event);
+  }
+
+  /// Shifts [event] to [date] (and [time] for timed events). A recurring
+  /// occurrence moves the whole series by the same number of days.
+  Future<void> _moveEvent(
+    CalendarEvent event,
+    DateTime date, {
+    String? time,
+    int? duration,
+    bool copy = false,
+  }) async {
+    if (!isMovableEvent(event)) return;
+    final store = context.read<EventStore>();
+    final source = _seriesSource(store, event);
+    final delta = DateTime.utc(date.year, date.month, date.day)
+        .difference(
+          DateTime.utc(
+            date_utils.parseDateKey(event.date).year,
+            date_utils.parseDateKey(event.date).month,
+            date_utils.parseDateKey(event.date).day,
+          ),
+        )
+        .inDays;
+    final newDate = date_utils.toDateKey(
+      date_utils.addDays(date_utils.parseDateKey(source.date), delta),
+    );
+    final newTime = time ?? source.time;
+    final newDuration = duration ?? source.duration;
+    String? startsAt, endsAt;
+    if (newTime != null) {
+      try {
+        final start = wallTimeToDate(newDate, newTime, widget.deviceZone);
+        startsAt = start.toIso8601String();
+        endsAt = start.add(Duration(minutes: newDuration)).toIso8601String();
+      } catch (_) {
+        return; // The local clock time does not exist at a DST transition.
+      }
+    }
+    var moved = source.copyWith(
+      date: newDate,
+      time: newTime,
+      duration: newDuration,
+      startsAt: startsAt,
+      clearStartsAt: startsAt == null,
+      endsAt: endsAt,
+      clearEndsAt: endsAt == null,
+      clearSeriesId: true,
+    );
+    if (copy) {
+      moved = CalendarEvent(
+        id: '',
+        date: moved.date,
+        title: moved.title,
+        location: moved.location,
+        recurrence: moved.recurrence,
+        url: moved.url,
+        description: moved.description,
+        timeZone: moved.timeZone,
+        startsAt: moved.startsAt,
+        endsAt: moved.endsAt,
+        time: moved.time,
+        duration: moved.duration,
+        color: moved.color,
+      );
+    }
+    final saved = await store.saveEvent(moved);
+    _hoveredEvent = null; // the hovered copy is now stale
+    _lastEventId = saved.id;
+    await _syncToEventKit(store, saved);
+    await _refreshLiveActivity();
+  }
+
+  void _selectDay(DateTime date) {
+    setState(() {
+      _selectedKey = date_utils.toDateKey(date);
+      _anchorDate = date;
+    });
+    _refreshHolidays();
+  }
+
+  /// Arrow keys: move the selected day, and the selected hour in time views.
+  void _navigate(int dx, int dy) {
+    switch (_view) {
+      case ViewMode.month:
+        _selectDay(
+          date_utils.addDays(
+            date_utils.parseDateKey(_selectedKey),
+            dx + dy * 7,
+          ),
+        );
+      case ViewMode.week:
+      case ViewMode.day:
+        if (dx != 0) _selectDay(date_utils.addDays(_anchorDate, dx));
+        if (dy != 0) {
+          setState(() => _focusHour = (_focusHour + dy).clamp(0, 23));
+        }
+      case ViewMode.list:
+        break;
+    }
+  }
+
+  void _activateSelection() {
+    if (_view == ViewMode.list) return;
+    _openCreate(
+      _view == ViewMode.month
+          ? date_utils.parseDateKey(_selectedKey)
+          : _anchorDate,
+      _view == ViewMode.month
+          ? null
+          : '${_focusHour.toString().padLeft(2, '0')}:00',
+    );
+  }
+
+  /// Option+arrows nudge the target event by a day (or an hour/15 minutes).
+  void _nudgeHovered(int days, int minutes) {
+    final event = _targetEvent();
+    if (event == null || !isMovableEvent(event)) return;
+    String? time;
+    var date = date_utils.parseDateKey(event.date);
+    if (minutes != 0 && event.time != null) {
+      final total = date_utils.minutesFromTime(event.time!) + minutes;
+      final dayShift = total < 0 ? -1 : (total >= 1440 ? 1 : 0);
+      date = date_utils.addDays(date, dayShift);
+      time = date_utils.timeFromMinutes((total % 1440 + 1440) % 1440);
+    }
+    date = date_utils.addDays(date, days);
+    _moveEvent(event, date, time: time);
+  }
+
+  /// Cmd+D copies the target event to the selected day (and hour).
+  void _duplicateHovered() {
+    final event = _targetEvent();
+    if (event == null || !isMovableEvent(event)) return;
+    final inTimeView = _view == ViewMode.week || _view == ViewMode.day;
+    final target = _view == ViewMode.month
+        ? date_utils.parseDateKey(_selectedKey)
+        : _anchorDate;
+    _moveEvent(
+      event,
+      target,
+      time: inTimeView && event.time != null
+          ? '${_focusHour.toString().padLeft(2, '0')}:00'
+          : null,
+      copy: true,
+    );
+  }
+
+  Future<void> _createRange(DateTime date, String time, int duration) =>
+      _openSheet(
+        draft: null,
+        date: date,
+        time: time,
+        newEventDuration: duration,
+      );
+
+  Future<void> _quickCreate(QuickEvent quick) async {
+    final store = context.read<EventStore>();
+    final date = quick.date!;
+    final saved = await store.saveEvent(
+      CalendarEvent(
+        id: '',
+        date: date_utils.toDateKey(date),
+        title: quick.title,
+        time: quick.time,
+        duration: quick.time == null ? 1440 : quick.duration,
+        color: colorToHex(palette[0].value),
+      ),
+    );
+    _lastEventId = saved.id;
+    _selectDay(date);
+    await _syncToEventKit(store, saved);
+    await _refreshLiveActivity();
+  }
+
+  static String _timeLabel(String? time, int duration) => time == null
+      ? '종일'
+      : '${date_utils.formatTimeLabel(time)} · ${date_utils.formatDurationLabel(duration)}';
+
+  List<PaletteItem> _paletteItems(String query) {
+    final store = context.read<EventStore>();
+    final imported = context.read<ImportedEvents>();
+    final q = query.toLowerCase();
+    bool match(String label, [String keywords = '']) =>
+        q.isEmpty || '$label $keywords'.toLowerCase().contains(q);
+
+    final items = <PaletteItem>[];
+
+    final quick = query.isEmpty ? null : parseQuickEvent(query, DateTime.now());
+    if (quick != null && quick.date != null) {
+      final dayLabel =
+          '${quick.date!.month}월 ${quick.date!.day}일 (${date_utils.weekdays[quick.date!.weekday % 7]})';
+      if (quick.title.isNotEmpty) {
+        items.add(
+          PaletteItem(
+            label: '"${quick.title}" 일정 만들기',
+            detail: '$dayLabel · ${_timeLabel(quick.time, quick.duration)}',
+            icon: CupertinoIcons.add_circled,
+            shortcut: '↵',
+            run: () => _quickCreate(quick),
+          ),
+        );
+      } else if (quick.hasDate) {
+        items.add(
+          PaletteItem(
+            label: '$dayLabel(으)로 이동',
+            icon: CupertinoIcons.arrow_right_circle,
+            shortcut: '↵',
+            run: () => _selectDay(quick.date!),
+          ),
+        );
+      }
+    }
+
+    final commands = <(String, String, IconData, String?, VoidCallback)>[
+      ('새 일정', '만들기 추가', CupertinoIcons.add, '⌘N', () => _activateCreate()),
+      ('오늘로 이동', 'today', CupertinoIcons.calendar_today, 'T', _goToday),
+      ('이전', 'previous', CupertinoIcons.chevron_left, 'K', _goPrev),
+      ('다음', 'next', CupertinoIcons.chevron_right, 'J', _goNext),
+      (
+        '월간 보기',
+        'month',
+        CupertinoIcons.calendar,
+        'M',
+        () => setState(() => _view = ViewMode.month),
+      ),
+      (
+        '주간 보기',
+        'week',
+        CupertinoIcons.calendar,
+        'W',
+        () => setState(() => _view = ViewMode.week),
+      ),
+      (
+        '일간 보기',
+        'day',
+        CupertinoIcons.calendar,
+        'D',
+        () => setState(() => _view = ViewMode.day),
+      ),
+      (
+        '목록 보기',
+        'list',
+        CupertinoIcons.list_bullet,
+        'L',
+        () => setState(() => _view = ViewMode.list),
+      ),
+      ('설정', 'settings', CupertinoIcons.gear, null, _openSettings),
+      (
+        '캘린더 연결',
+        'connect',
+        CupertinoIcons.link,
+        null,
+        _showCalendarConnections,
+      ),
+    ];
+    for (final c in commands) {
+      if (match(c.$1, c.$2)) {
+        items.add(
+          PaletteItem(label: c.$1, icon: c.$3, shortcut: c.$4, run: c.$5),
+        );
+      }
+    }
+
+    if (query.isNotEmpty) {
+      final (from, to) = _range;
+      final expanded = expandEvents(
+        _combineEvents(store.events, imported.events),
+        from,
+        to,
+        widget.deviceZone,
+      );
+      final found = <CalendarEvent>[
+        for (final list in expanded.values)
+          for (final event in list)
+            if (!event.id.startsWith('holiday:') &&
+                !event.id.startsWith('solarTerm:') &&
+                !event.id.startsWith('anniversary:') &&
+                event.title.toLowerCase().contains(q))
+              event,
+      ]..sort((a, b) => a.date.compareTo(b.date));
+      for (final event in found.take(8)) {
+        items.add(
+          PaletteItem(
+            label: event.title,
+            detail: '${event.date} · ${_timeLabel(event.time, event.duration)}',
+            icon: CupertinoIcons.doc_text_search,
+            run: () {
+              _selectDay(date_utils.parseDateKey(event.date));
+              _openEdit(event);
+            },
+          ),
+        );
+      }
+    }
+    return items;
+  }
+
+  void _activateCreate() => _openCreate(
+    _view == ViewMode.month
+        ? date_utils.parseDateKey(_selectedKey)
+        : _anchorDate,
+  );
+
+  void _openPalette() {
+    showCommandPalette(
+      context,
+      theme: Theme.of(context).brightness == Brightness.dark
+          ? darkTheme
+          : lightTheme,
+      itemsFor: _paletteItems,
+    );
+  }
+
   void _goToday() {
     setState(() {
       _anchorDate = DateTime.now();
@@ -1117,6 +1463,7 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _openEdit(CalendarEvent event) async {
+    _lastEventId = event.seriesId ?? event.id;
     if (event.id.startsWith('import:')) {
       final localDraft = CalendarEvent(
         id: '',
@@ -1171,10 +1518,23 @@ class _CalendarHomeState extends State<CalendarHome>
     required CalendarEvent? draft,
     required DateTime date,
     String? time,
+    int? newEventDuration,
     bool syncToSystem = true,
     Future<void> Function()? onBeforeSave,
     Future<void> Function()? onDelete,
   }) async {
+    if (draft == null && newEventDuration != null) {
+      draft = CalendarEvent(
+        id: '',
+        date: date_utils.toDateKey(date),
+        title: '',
+        time: time,
+        duration: newEventDuration,
+        color: colorToHex(palette[0].value),
+      );
+    }
+    final editing =
+        draft != null && !(newEventDuration != null && draft.id.isEmpty);
     _collapseAgenda();
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
@@ -1194,15 +1554,12 @@ class _CalendarHomeState extends State<CalendarHome>
             ),
           ),
           Align(
-            alignment: !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
+            alignment: useDesktopLayout
                 ? Alignment.center
                 : Alignment.bottomCenter,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth:
-                    !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
-                    ? 580
-                    : double.infinity,
+                maxWidth: useDesktopLayout ? 580 : double.infinity,
               ),
               child: Material(
                 color: Colors.transparent,
@@ -1211,7 +1568,7 @@ class _CalendarHomeState extends State<CalendarHome>
                       ? darkTheme
                       : lightTheme,
                   draft: draft,
-                  isEditing: draft != null,
+                  isEditing: editing,
                   initialDate: date,
                   initialTime: time,
                   onSave: (event) async {
@@ -1253,20 +1610,52 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   void _openSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(
-          theme: Theme.of(context).brightness == Brightness.dark
-              ? darkTheme
-              : lightTheme,
-          accountLabel: widget.user?.email ?? '게스트',
-          onLogout: widget.onLogout,
-          onBackup: _backupData,
-          onRestore: _restoreData,
-          onLiveActivities: LiveActivity.isSupportedPlatform
-              ? _showLiveActivities
-              : null,
-        ),
+    final settings = SettingsScreen(
+      theme: Theme.of(context).brightness == Brightness.dark
+          ? darkTheme
+          : lightTheme,
+      accountLabel: widget.user?.email ?? '게스트',
+      onLogout: widget.onLogout,
+      onBackup: _backupData,
+      onRestore: _restoreData,
+      onLiveActivities: LiveActivity.isSupportedPlatform
+          ? _showLiveActivities
+          : null,
+    );
+    if (!useDesktopLayout) {
+      Navigator.of(context)
+          .push(MaterialPageRoute<void>(builder: (_) => settings));
+      return;
+    }
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '설정 닫기',
+      barrierColor: Colors.black.withValues(alpha: 0.18),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dialogContext, _, _) => Stack(
+        children: [
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.10)),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: 580,
+                    maxHeight: 720,
+                  ),
+                  child: Material(color: Colors.transparent, child: settings),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1281,11 +1670,7 @@ class _CalendarHomeState extends State<CalendarHome>
     final (from, to) = _range;
     final expanded = expandEvents(
       _combineEvents(
-        !kIsWeb &&
-                defaultTargetPlatform == TargetPlatform.macOS &&
-                !_showPersonalCalendar
-            ? const {}
-            : store.events,
+        useDesktopLayout && !_showPersonalCalendar ? const {} : store.events,
         imported.events,
       ),
       from,
@@ -1336,7 +1721,7 @@ class _CalendarHomeState extends State<CalendarHome>
       ),
       body: SafeArea(
         bottom: false,
-        child: !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
+        child: useDesktopLayout
             ? MacosCalendarShell(
                 theme: theme,
                 title: _title,
@@ -1431,6 +1816,11 @@ class _CalendarHomeState extends State<CalendarHome>
                       ? date_utils.parseDateKey(_selectedKey)
                       : _anchorDate,
                 ),
+                onPalette: _openPalette,
+                onNavigate: _navigate,
+                onActivate: _activateSelection,
+                onNudge: _nudgeHovered,
+                onDuplicate: _duplicateHovered,
                 onManage: () => _scaffoldKey.currentState?.openDrawer(),
                 onSearch: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -1550,6 +1940,8 @@ class _CalendarHomeState extends State<CalendarHome>
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onCollapseReady: (collapse) => _collapseAgenda = collapse,
+          onEventMove: _moveEvent,
+          onEventHover: _onEventHover,
           onSelectDate: (key) {
             setState(() {
               _selectedKey = key;
@@ -1566,6 +1958,18 @@ class _CalendarHomeState extends State<CalendarHome>
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onEventPress: _openEdit,
+          onEventMove: (event, date, time) =>
+              _moveEvent(event, date, time: time),
+          onEventResize: (event, time, duration) => _moveEvent(
+            event,
+            date_utils.parseDateKey(event.date),
+            time: time,
+            duration: duration,
+          ),
+          onEventHover: _onEventHover,
+          onRangeCreate: _createRange,
+          selectedDate: _anchorDate,
+          selectedHour: _focusHour,
         );
       case ViewMode.day:
         return TimeGridView(
@@ -1575,6 +1979,18 @@ class _CalendarHomeState extends State<CalendarHome>
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onEventPress: _openEdit,
+          onEventMove: (event, date, time) =>
+              _moveEvent(event, date, time: time),
+          onEventResize: (event, time, duration) => _moveEvent(
+            event,
+            date_utils.parseDateKey(event.date),
+            time: time,
+            duration: duration,
+          ),
+          onEventHover: _onEventHover,
+          onRangeCreate: _createRange,
+          selectedDate: _anchorDate,
+          selectedHour: _focusHour,
         );
       case ViewMode.list:
         return EventListView(

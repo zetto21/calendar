@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ImportCalendar {
   final String id, title, color;
@@ -99,7 +100,29 @@ class AuthService {
   AuthUser? _sessionUser;
   int _sessionGeneration = 0;
 
+  /// The web build keeps the session in the browser's local storage so a
+  /// page reload does not log the user out.
+  String get _webSessionKey => 'calendar.session.$apiBase';
+
+  String _encodeSession(String token, AuthUser user) => jsonEncode({
+    'token': token,
+    'user': {
+      'id': user.id,
+      'email': user.email,
+      'name': user.name,
+      'createdAt': user.createdAt,
+    },
+  });
+
   Future<void> _saveSession(String token, AuthUser user) async {
+    if (kIsWeb) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_webSessionKey, _encodeSession(token, user));
+      } catch (_) {
+        // Private browsing can block storage; stay logged in for this tab.
+      }
+    }
     if (_persistSession) {
       await _sessionChannel.invokeMethod<void>('write', {
         'account': apiBase,
@@ -123,6 +146,12 @@ class AuthService {
     _sessionGeneration++;
     _sessionToken = null;
     _sessionUser = null;
+    if (kIsWeb) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_webSessionKey);
+      } catch (_) {}
+    }
     if (_persistSession) {
       await _sessionChannel.invokeMethod<void>('delete', {'account': apiBase});
     }
@@ -253,6 +282,23 @@ class AuthService {
 
   Future<AuthUser?> restoreSession() async {
     final generation = _sessionGeneration;
+    if (_sessionToken == null && kIsWeb) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final saved = prefs.getString(_webSessionKey);
+        if (generation != _sessionGeneration) return null;
+        if (saved != null) {
+          final data = jsonDecode(saved) as Map<String, dynamic>;
+          _sessionToken = data['token'] as String;
+          _sessionUser = AuthUser.fromJson(
+            data['user'] as Map<String, dynamic>,
+          );
+        }
+      } catch (_) {
+        await _clearSession();
+        return null;
+      }
+    }
     if (_sessionToken == null && _persistSession) {
       try {
         final saved = await _sessionChannel.invokeMethod<String>('read', {
@@ -361,8 +407,12 @@ class AuthService {
     );
   });
 
-  String socialLoginStartURL(SocialProvider provider) =>
-      '$apiBase/api/auth/oauth/${provider.name}/start';
+  String socialLoginStartURL(SocialProvider provider) {
+    final base = '$apiBase/api/auth/oauth/${provider.name}/start';
+    if (!kIsWeb) return base;
+    // The server sends the login result back to this page's own origin.
+    return '$base?client=web&return=${Uri.encodeQueryComponent(Uri.base.origin)}';
+  }
 
   Future<AuthUser> exchangeSocialCode(String code) async {
     final result = await _request(

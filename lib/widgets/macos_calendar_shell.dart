@@ -29,13 +29,20 @@ class MacosCalendarShell extends StatelessWidget {
     this.importedControls = const [],
     this.onConnect,
     this.onSettings,
+    this.onNavigate,
+    this.onPalette,
+    this.onActivate,
+    this.onNudge,
+    this.onDuplicate,
   });
   final AppTheme theme;
   final String title, account, userName;
   final ViewMode view;
   final ValueChanged<ViewMode> onViewChanged;
   final VoidCallback onPrevious, onNext, onToday, onCreate, onSearch, onManage;
-  final VoidCallback? onConnect, onSettings;
+  final VoidCallback? onConnect, onSettings, onActivate, onDuplicate, onPalette;
+  final void Function(int dx, int dy)? onNavigate;
+  final void Function(int days, int minutes)? onNudge;
   final DateTime? selectedDate;
   final ValueChanged<DateTime>? onDateSelected;
   final List<Widget> calendarControls;
@@ -361,6 +368,66 @@ class MacosCalendarShell extends StatelessWidget {
       const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () =>
           onViewChanged(ViewMode.list),
       const SingleActivator(LogicalKeyboardKey.keyN, meta: true): onCreate,
+      const SingleActivator(LogicalKeyboardKey.keyK, meta: true): ?onPalette,
+      const SingleActivator(LogicalKeyboardKey.slash): ?onPalette,
+      const SingleActivator(LogicalKeyboardKey.keyT): onToday,
+      const SingleActivator(LogicalKeyboardKey.keyJ): onNext,
+      const SingleActivator(LogicalKeyboardKey.keyK): onPrevious,
+      const SingleActivator(LogicalKeyboardKey.keyC): onCreate,
+      const SingleActivator(LogicalKeyboardKey.keyM): () =>
+          onViewChanged(ViewMode.month),
+      const SingleActivator(LogicalKeyboardKey.keyW): () =>
+          onViewChanged(ViewMode.week),
+      const SingleActivator(LogicalKeyboardKey.keyD): () =>
+          onViewChanged(ViewMode.day),
+      const SingleActivator(LogicalKeyboardKey.keyL): () =>
+          onViewChanged(ViewMode.list),
+      if (onNavigate != null) ...{
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+            onNavigate!(-1, 0),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+            onNavigate!(1, 0),
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+            onNavigate!(0, -1),
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+            onNavigate!(0, 1),
+      },
+      const SingleActivator(LogicalKeyboardKey.enter): ?onActivate,
+      const SingleActivator(LogicalKeyboardKey.keyD, meta: true): ?onDuplicate,
+      if (onNudge != null) ...{
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () =>
+            onNudge!(-1, 0),
+        const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () =>
+            onNudge!(1, 0),
+        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () =>
+            onNudge!(0, -60),
+        const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () =>
+            onNudge!(0, 60),
+        const SingleActivator(
+          LogicalKeyboardKey.arrowLeft,
+          alt: true,
+          shift: true,
+        ): () =>
+            onNudge!(-7, 0),
+        const SingleActivator(
+          LogicalKeyboardKey.arrowRight,
+          alt: true,
+          shift: true,
+        ): () =>
+            onNudge!(7, 0),
+        const SingleActivator(
+          LogicalKeyboardKey.arrowUp,
+          alt: true,
+          shift: true,
+        ): () =>
+            onNudge!(0, -15),
+        const SingleActivator(
+          LogicalKeyboardKey.arrowDown,
+          alt: true,
+          shift: true,
+        ): () =>
+            onNudge!(0, 15),
+      },
       const SingleActivator(LogicalKeyboardKey.keyF, meta: true): onSearch,
       const SingleActivator(LogicalKeyboardKey.keyT, meta: true): onToday,
       const SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true):

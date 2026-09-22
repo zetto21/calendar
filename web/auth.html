@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<title>로그인 완료</title>
+<p>로그인이 완료되었습니다. 창이 자동으로 닫히지 않으면 직접 닫아 주세요.</p>
+<script>
+  function postAuthenticationMessage() {
+    const message = {
+      'flutter-web-auth-2': window.location.href
+    };
+
+    if (window.opener) {
+      window.opener.postMessage(message, window.location.origin);
+      window.close();
+    } else if (window.parent && window.parent !== window) {
+      window.parent.postMessage(message, window.location.origin);
+    } else {
+      localStorage.setItem('flutter-web-auth-2', window.location.href);
+      window.close();
+    }
+  }
+
+  postAuthenticationMessage();
+</script>

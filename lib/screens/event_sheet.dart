@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../logic/date_utils.dart' as date_utils;
 import '../models/calendar_event.dart';
 import '../theme/app_theme.dart';
 import '../widgets/liquid_glass.dart';
+import '../platform.dart';
 
 /// Core-fields port of components/EventSheet.tsx + EventOptions.tsx +
 /// EventDetailFields.tsx: title, location, all-day, start/end date+time,
@@ -51,6 +53,7 @@ class _EventSheetState extends State<EventSheet> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
     final draft = widget.draft;
     _titleController = TextEditingController(text: draft?.title ?? '');
     _locationController = TextEditingController(text: draft?.location ?? '');
@@ -79,6 +82,7 @@ class _EventSheetState extends State<EventSheet> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
     _titleController.dispose();
     _locationController.dispose();
     _urlController.dispose();
@@ -614,8 +618,270 @@ class _EventSheetState extends State<EventSheet> {
     );
   }
 
+  bool get _desktop => useDesktopLayout;
+
+  Widget _chip(String label, VoidCallback onTap, {bool strong = false}) {
+    final theme = widget.theme;
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: theme.bgSecondary,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: theme.text,
+              fontSize: 13,
+              fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _desktopRow(IconData icon, Widget child, {bool top = false}) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: top
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 28,
+              child: Padding(
+                padding: EdgeInsets.only(top: top ? 8 : 0),
+                child: Icon(icon, size: 17, color: widget.theme.textMuted),
+              ),
+            ),
+            Expanded(child: child),
+          ],
+        ),
+      );
+
+  Widget _desktopField(
+    IconData icon,
+    TextEditingController controller,
+    String hint, {
+    int maxLines = 1,
+    TextInputType? keyboardType,
+  }) => _desktopRow(
+    icon,
+    CupertinoTextField.borderless(
+      controller: controller,
+      minLines: 1,
+      maxLines: maxLines,
+      keyboardType: keyboardType,
+      style: TextStyle(color: widget.theme.text, fontSize: 14),
+      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
+      placeholder: hint,
+      placeholderStyle: TextStyle(color: widget.theme.textMuted, fontSize: 14),
+    ),
+    top: maxLines > 1,
+  );
+
+  Widget _buildDesktop(BuildContext context) {
+    final theme = widget.theme;
+    final swatches = [...palette.skip(6).take(6), ...palette.take(6)];
+    final durationLabel = date_utils.formatDurationLabel(_durationMinutes);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.border),
+        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 32)],
+      ),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: CupertinoTextField.borderless(
+                    controller: _titleController,
+                    autofocus: !widget.isEditing,
+                    style: TextStyle(
+                      color: theme.text,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    placeholder: '제목 없음',
+                    placeholderStyle: TextStyle(
+                      color: theme.textMuted,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '닫기 · esc',
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(
+                    CupertinoIcons.xmark,
+                    size: 16,
+                    color: theme.textMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            _desktopRow(
+              CupertinoIcons.time,
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _chip(_shortDateLabel(_date), _pickDate, strong: true),
+                  if (!_isAllDay) ...[
+                    _chip(_startTime.format(context), _pickStartDateTime),
+                    Icon(
+                      CupertinoIcons.arrow_right,
+                      size: 13,
+                      color: theme.textMuted,
+                    ),
+                    _chip(_endTime.format(context), _pickEndTime),
+                    Text(
+                      durationLabel,
+                      style: TextStyle(color: theme.textMuted, fontSize: 12),
+                    ),
+                  ],
+                  _chip(
+                    _isAllDay ? '종일 ✓' : '종일',
+                    () => setState(() => _isAllDay = !_isAllDay),
+                  ),
+                ],
+              ),
+            ),
+            _desktopRow(
+              CupertinoIcons.repeat,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _chip(
+                  _frequency == null ? '반복 안 함' : _frequencyLabel(_frequency!),
+                  _pickRepeat,
+                ),
+              ),
+            ),
+            _desktopField(
+              CupertinoIcons.location,
+              _locationController,
+              '장소 추가',
+            ),
+            _desktopField(
+              CupertinoIcons.link,
+              _urlController,
+              'URL 추가',
+              keyboardType: TextInputType.url,
+            ),
+            _desktopField(
+              CupertinoIcons.text_alignleft,
+              _descriptionController,
+              '설명 추가',
+              maxLines: 5,
+            ),
+            _desktopRow(
+              CupertinoIcons.paintbrush,
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final entry in swatches)
+                    GestureDetector(
+                      onTap: () =>
+                          setState(() => _color = colorToHex(entry.value)),
+                      child: Tooltip(
+                        message: entry.name,
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: entry.value,
+                            shape: BoxShape.circle,
+                            border:
+                                _color.toUpperCase() == colorToHex(entry.value)
+                                ? Border.all(color: theme.text, width: 2)
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Divider(height: 1, color: theme.border),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (widget.isEditing && widget.onDelete != null)
+                  TextButton.icon(
+                    onPressed: _confirmDelete,
+                    icon: const Icon(CupertinoIcons.trash, size: 15),
+                    label: const Text('삭제'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: CupertinoColors.destructiveRed,
+                    ),
+                  ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    '취소',
+                    style: TextStyle(color: theme.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                FilledButton(
+                  onPressed: _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.text,
+                    foregroundColor: theme.bg,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('저장  ⌘↵'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Cmd+Enter saves and Esc closes, even after focus left the text fields
+  /// (e.g. after picking a color).
+  bool _onKey(KeyEvent event) {
+    if (!_desktop || event is! KeyDownEvent || !mounted) return false;
+    if (ModalRoute.of(context)?.isCurrent != true) return false;
+    if (event.logicalKey == LogicalKeyboardKey.enter &&
+        HardwareKeyboard.instance.isMetaPressed) {
+      _save();
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.pop(context);
+      return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_desktop) return _buildDesktop(context);
     final theme = widget.theme;
     const blue = Color(0xFF3B82F6);
     return Padding(
@@ -655,7 +921,11 @@ class _EventSheetState extends State<EventSheet> {
                           padding: EdgeInsets.zero,
                           minimumSize: const Size(44, 44),
                           onPressed: () => Navigator.pop(context),
-                          child: Icon(CupertinoIcons.xmark, color: theme.text, size: 26),
+                          child: Icon(
+                            CupertinoIcons.xmark,
+                            color: theme.text,
+                            size: 26,
+                          ),
                         ),
                         Expanded(
                           child: Text(
@@ -683,7 +953,11 @@ class _EventSheetState extends State<EventSheet> {
                           padding: EdgeInsets.zero,
                           minimumSize: const Size(44, 44),
                           onPressed: _save,
-                          child: Icon(CupertinoIcons.check_mark, color: theme.text, size: 27),
+                          child: Icon(
+                            CupertinoIcons.check_mark,
+                            color: theme.text,
+                            size: 27,
+                          ),
                         ),
                       ],
                     ),

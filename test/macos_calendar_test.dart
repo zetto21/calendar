@@ -91,7 +91,7 @@ void main() {
           );
           await tester.tap(find.text('프로젝트 리뷰').last);
           expect(edits, greaterThan(0));
-          await tester.tap(find.byTooltip('주간'));
+          await tester.tap(find.byTooltip('주간 · ⌘2'));
           expect(view, ViewMode.week);
           await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
           await tester.sendKeyEvent(LogicalKeyboardKey.keyN);

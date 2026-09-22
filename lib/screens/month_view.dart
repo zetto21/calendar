@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import '../logic/date_utils.dart' as date_utils;
 import '../models/calendar_event.dart';
 import '../theme/app_theme.dart';
+import '../platform.dart';
 
 /// Month grid matching the expanded event bars and compact agenda layout.
 class MonthView extends StatelessWidget {
@@ -142,37 +143,44 @@ class _MonthCell extends StatelessWidget {
       onEnter: (_) => onEventHover?.call(event),
       onExit: (_) => onEventHover?.call(null),
       cursor: SystemMouseCursors.grab,
-      child: Draggable<CalendarEvent>(
-        data: event,
-        dragAnchorStrategy: pointerDragAnchorStrategy,
-        feedback: Material(
-          color: Colors.transparent,
-          child: Container(
-            height: height - 4,
-            constraints: const BoxConstraints(maxWidth: 160),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            alignment: Alignment.centerLeft,
-            decoration: BoxDecoration(
-              color: colorFromHex(event.color).withValues(alpha: 0.9),
-              borderRadius: BorderRadius.circular(5),
-            ),
-            child: Text(
-              event.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.white),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          onEventHover?.call(event);
+          onSelectDate(event.date);
+        },
+        child: Draggable<CalendarEvent>(
+          data: event,
+          dragAnchorStrategy: pointerDragAnchorStrategy,
+          feedback: Material(
+            color: Colors.transparent,
+            child: Container(
+              height: height - 4,
+              constraints: const BoxConstraints(maxWidth: 160),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(
+                color: colorFromHex(event.color).withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                event.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, color: Colors.white),
+              ),
             ),
           ),
+          childWhenDragging: Opacity(opacity: 0.35, child: chip),
+          child: chip,
         ),
-        childWhenDragging: Opacity(opacity: 0.35, child: chip),
-        child: chip,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final desktop = !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+    final desktop = useDesktopLayout;
     final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
     final key = date_utils.toDateKey(cell.date);
     final holiday = holidayNames[key];

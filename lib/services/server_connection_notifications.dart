@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 
 /// Android system notifications for server connectivity transitions.
@@ -19,7 +20,7 @@ class ServerConnectionNotifications {
   }
 
   static Future<void> _initialize() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     // Android 13+ permission is requested by the native implementation.
     // Failures here must never block the connection monitor itself.
     try {
@@ -44,7 +45,7 @@ class ServerConnectionNotifications {
     required String body,
   }) async {
     await initialize();
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     try {
       await _channel.invokeMethod<void>('show', {
         'id': id,

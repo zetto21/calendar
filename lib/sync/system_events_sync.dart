@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../models/calendar_event.dart';
 import '../native/eventkit.dart';
 import '../storage/event_store.dart';
@@ -12,7 +14,7 @@ class SystemEventsSync {
   final EventStore store;
   SystemEventsSync(this.store);
 
-  bool get isSupported => Platform.isIOS;
+  bool get isSupported => !kIsWeb && Platform.isIOS;
 
   Future<void> sync(DateTime rangeFrom, DateTime rangeTo) async {
     if (!isSupported) return;

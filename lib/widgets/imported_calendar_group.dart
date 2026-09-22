@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 
 import '../storage/imported_events.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../platform.dart';
 
 /// A service expands to the actual calendars imported from that service.
 class ImportedCalendarGroup extends StatelessWidget {
@@ -18,7 +18,7 @@ class ImportedCalendarGroup extends StatelessWidget {
   final ImportedEvents imports;
   final String provider;
 
-  bool get _mac => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+  bool get _mac => useDesktopLayout;
 
   String get label => switch (provider) {
     'kakao' => '톡캘린더',
