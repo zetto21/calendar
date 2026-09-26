@@ -161,10 +161,10 @@ class MacosCalendarShell extends StatelessWidget {
                 child: TextButton.icon(
                   onPressed: () {
                     Navigator.pop(context);
-                    (onConnect ?? onManage)();
+                    (onSettings ?? onManage)();
                   },
-                  icon: const Icon(CupertinoIcons.add, size: 18),
-                  label: const Text('캘린더 연결'),
+                  icon: const Icon(CupertinoIcons.gear, size: 18),
+                  label: const Text('설정'),
                 ),
               ),
             ],
@@ -289,7 +289,7 @@ class MacosCalendarShell extends StatelessWidget {
                 color: focused
                     ? Colors.white
                     : visible || today
-                    ? theme.accent
+                    ? theme.accent.withValues(alpha: cell.inMonth ? 1 : 0.5)
                     : theme.text.withValues(alpha: cell.inMonth ? 1 : 0.3),
               ),
             ),
@@ -347,7 +347,8 @@ class MacosCalendarShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _icon('캘린더 연결', CupertinoIcons.add, onConnect ?? onManage),
+                  _icon('일정 추가 · ⌘N', CupertinoIcons.add, onCreate),
+                  _icon('일정 검색 · ⌘F', CupertinoIcons.search, onSearch),
                 ],
               ),
             ),
@@ -425,6 +426,27 @@ class MacosCalendarShell extends StatelessWidget {
     );
   }
 
+  /// Whether the focused widget is a text input. Single-letter shortcuts
+  /// below must stand down while typing, or every matching keystroke (e.g.
+  /// "c" while naming an event) fires the shortcut instead of the letter.
+  ///
+  /// `primaryFocus.context` is the `Focus` widget `EditableText` wraps its
+  /// own `FocusNode` in internally — it is never the `EditableText` widget
+  /// itself, so checking `context.widget is EditableText` never matches.
+  /// Walking up for an `EditableText` ancestor instead does.
+  static bool _isEditingText() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context == null) return false;
+    return context.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
+  static VoidCallback _unlessTyping(VoidCallback action) => () {
+    if (!_isEditingText()) action();
+  };
+
+  static VoidCallback? _unlessTypingOrNull(VoidCallback? action) =>
+      action == null ? null : _unlessTyping(action);
+
   @override
   Widget build(BuildContext context) => CallbackShortcuts(
     bindings: {
@@ -437,65 +459,82 @@ class MacosCalendarShell extends StatelessWidget {
       const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () =>
           onViewChanged(ViewMode.list),
       const SingleActivator(LogicalKeyboardKey.keyN, meta: true): onCreate,
-      const SingleActivator(LogicalKeyboardKey.keyK, meta: true): ?onPalette,
-      const SingleActivator(LogicalKeyboardKey.slash): ?onPalette,
-      const SingleActivator(LogicalKeyboardKey.keyT): onToday,
-      const SingleActivator(LogicalKeyboardKey.keyJ): onNext,
-      const SingleActivator(LogicalKeyboardKey.keyK): onPrevious,
-      const SingleActivator(LogicalKeyboardKey.keyC): onCreate,
-      const SingleActivator(LogicalKeyboardKey.keyM): () =>
-          onViewChanged(ViewMode.month),
-      const SingleActivator(LogicalKeyboardKey.keyW): () =>
-          onViewChanged(ViewMode.week),
-      const SingleActivator(LogicalKeyboardKey.keyD): () =>
-          onViewChanged(ViewMode.day),
-      const SingleActivator(LogicalKeyboardKey.keyL): () =>
-          onViewChanged(ViewMode.list),
+      const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+          ?_unlessTypingOrNull(onPalette),
+      const SingleActivator(LogicalKeyboardKey.slash): ?_unlessTypingOrNull(
+        onPalette,
+      ),
+      const SingleActivator(LogicalKeyboardKey.keyT): _unlessTyping(onToday),
+      const SingleActivator(LogicalKeyboardKey.keyJ): _unlessTyping(onNext),
+      const SingleActivator(LogicalKeyboardKey.keyK): _unlessTyping(onPrevious),
+      const SingleActivator(LogicalKeyboardKey.keyC): _unlessTyping(onCreate),
+      const SingleActivator(LogicalKeyboardKey.keyM): _unlessTyping(
+        () => onViewChanged(ViewMode.month),
+      ),
+      const SingleActivator(LogicalKeyboardKey.keyW): _unlessTyping(
+        () => onViewChanged(ViewMode.week),
+      ),
+      const SingleActivator(LogicalKeyboardKey.keyD): _unlessTyping(
+        () => onViewChanged(ViewMode.day),
+      ),
+      const SingleActivator(LogicalKeyboardKey.keyL): _unlessTyping(
+        () => onViewChanged(ViewMode.list),
+      ),
       if (onNavigate != null) ...{
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
-            onNavigate!(-1, 0),
-        const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
-            onNavigate!(1, 0),
-        const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
-            onNavigate!(0, -1),
-        const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
-            onNavigate!(0, 1),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): _unlessTyping(
+          () => onNavigate!(-1, 0),
+        ),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): _unlessTyping(
+          () => onNavigate!(1, 0),
+        ),
+        const SingleActivator(LogicalKeyboardKey.arrowUp): _unlessTyping(
+          () => onNavigate!(0, -1),
+        ),
+        const SingleActivator(LogicalKeyboardKey.arrowDown): _unlessTyping(
+          () => onNavigate!(0, 1),
+        ),
       },
-      const SingleActivator(LogicalKeyboardKey.enter): ?onActivate,
+      const SingleActivator(LogicalKeyboardKey.enter): ?_unlessTypingOrNull(
+        onActivate,
+      ),
       const SingleActivator(LogicalKeyboardKey.keyD, meta: true): ?onDuplicate,
       if (onNudge != null) ...{
-        const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () =>
-            onNudge!(-1, 0),
-        const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () =>
-            onNudge!(1, 0),
-        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () =>
-            onNudge!(0, -60),
-        const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () =>
-            onNudge!(0, 60),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true):
+            _unlessTyping(() => onNudge!(-1, 0)),
+        const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true):
+            _unlessTyping(() => onNudge!(1, 0)),
+        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true):
+            _unlessTyping(() => onNudge!(0, -60)),
+        const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true):
+            _unlessTyping(() => onNudge!(0, 60)),
         const SingleActivator(
           LogicalKeyboardKey.arrowLeft,
           alt: true,
           shift: true,
-        ): () =>
-            onNudge!(-7, 0),
+        ): _unlessTyping(
+          () => onNudge!(-7, 0),
+        ),
         const SingleActivator(
           LogicalKeyboardKey.arrowRight,
           alt: true,
           shift: true,
-        ): () =>
-            onNudge!(7, 0),
+        ): _unlessTyping(
+          () => onNudge!(7, 0),
+        ),
         const SingleActivator(
           LogicalKeyboardKey.arrowUp,
           alt: true,
           shift: true,
-        ): () =>
-            onNudge!(0, -15),
+        ): _unlessTyping(
+          () => onNudge!(0, -15),
+        ),
         const SingleActivator(
           LogicalKeyboardKey.arrowDown,
           alt: true,
           shift: true,
-        ): () =>
-            onNudge!(0, 15),
+        ): _unlessTyping(
+          () => onNudge!(0, 15),
+        ),
       },
       const SingleActivator(LogicalKeyboardKey.keyF, meta: true): onSearch,
       const SingleActivator(LogicalKeyboardKey.keyT, meta: true): onToday,
@@ -544,15 +583,22 @@ class MacosCalendarShell extends StatelessWidget {
                                   CupertinoIcons.sidebar_left,
                                   () => _showCalendars(context),
                                 ),
-                              _icon('일정 추가 · ⌘N', CupertinoIcons.add, onCreate),
                               const Spacer(),
                               _views(),
+                              if (!sidebar) ...[
+                                const SizedBox(width: 6),
+                                _icon(
+                                  '일정 추가 · ⌘N',
+                                  CupertinoIcons.add,
+                                  onCreate,
+                                ),
+                                _icon(
+                                  '일정 검색 · ⌘F',
+                                  CupertinoIcons.search,
+                                  onSearch,
+                                ),
+                              ],
                               const Spacer(),
-                              _icon(
-                                '일정 검색 · ⌘F',
-                                CupertinoIcons.search,
-                                onSearch,
-                              ),
                               if (!sidebar)
                                 _icon(
                                   '설정',

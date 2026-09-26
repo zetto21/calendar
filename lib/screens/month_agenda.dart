@@ -12,6 +12,7 @@ import '../platform.dart';
 
 /// Calendar and selected-day agenda share the available screen height.
 class MonthAgenda extends StatefulWidget {
+  final Widget? sidePanel;
   final AppTheme theme;
   final DateTime viewDate;
   final EventMap events;
@@ -31,6 +32,7 @@ class MonthAgenda extends StatefulWidget {
   final ValueChanged<CalendarEvent?>? onEventHover;
   const MonthAgenda({
     super.key,
+    this.sidePanel,
     required this.theme,
     required this.viewDate,
     required this.events,
@@ -140,89 +142,138 @@ class _MonthAgendaState extends State<MonthAgenda> {
                     left: BorderSide(color: theme.border, width: 0.5),
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-                      child: Text(
-                        '${day.month}월 ${day.day}일 ${dates.weekdays[day.weekday % 7]}요일',
-                        style: TextStyle(
-                          color: theme.text,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                      child: Text(
-                        '${widget.showLunar ? '${dates.formatLunarDate(day) ?? ''} · ' : ''}일정 ${events.length}개',
-                        style: TextStyle(color: theme.textMuted, fontSize: 12),
-                      ),
-                    ),
-                    if (holidayName != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 8,
-                        ),
-                        child: Text(
-                          holidayName,
-                          style: TextStyle(color: theme.danger, fontSize: 13),
-                        ),
-                      ),
-                    Divider(height: 1, color: theme.border),
-                    Expanded(
-                      child: events.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.event_available_outlined,
-                                    color: theme.textMuted,
-                                    size: 30,
+                child:
+                    widget.sidePanel ??
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${day.month}월 ${day.day}일 ${dates.weekdays[day.weekday % 7]}요일',
+                                  style: TextStyle(
+                                    color: theme.text,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
                                   ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    '예정된 일정이 없습니다',
-                                    style: TextStyle(
-                                      color: theme.textSecondary,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            )
-                          : ListView.separated(
-                              padding: const EdgeInsets.all(12),
-                              itemCount: events.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(height: 6),
-                              itemBuilder: (context, index) {
-                                final event = events[index];
-                                final special = event.id.startsWith(
-                                  'anniversary:',
-                                );
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 6,
+                              IconButton(
+                                tooltip: _timeline ? '목록 보기' : '시간표 보기',
+                                onPressed: () =>
+                                    setState(() => _timeline = !_timeline),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: theme.bgSecondary,
+                                  foregroundColor: theme.textSecondary,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: _AgendaRow(
-                                    theme: theme,
-                                    event: event,
-                                    onTap: special
-                                        ? null
-                                        : () => widget.onEventPress(event),
-                                  ),
-                                );
-                              },
+                                ),
+                                icon: Icon(
+                                  _timeline
+                                      ? Icons.list_alt_outlined
+                                      : Icons.view_timeline_outlined,
+                                  size: 18,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                          child: Text(
+                            '${widget.showLunar ? '${dates.formatLunarDate(day) ?? ''} · ' : ''}일정 ${events.length}개',
+                            style: TextStyle(
+                              color: theme.textMuted,
+                              fontSize: 12,
                             ),
+                          ),
+                        ),
+                        if (holidayName != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              holidayName,
+                              style: TextStyle(
+                                color: theme.danger,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        Divider(height: 1, color: theme.border),
+                        Expanded(
+                          child: _timeline
+                              ? TimeGridView(
+                                  embedded: true,
+                                  key: ValueKey('desktop-${widget.selectedKey}'),
+                                  theme: theme,
+                                  days: [day],
+                                  events: {
+                                    ...widget.events,
+                                    widget.selectedKey: events,
+                                  },
+                                  onSlotPress: widget.onSlotPress,
+                                  onEventPress: (event) {
+                                    if (!anniversaries.contains(event)) {
+                                      widget.onEventPress(event);
+                                    }
+                                  },
+                                )
+                              : events.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.event_available_outlined,
+                                        color: theme.textMuted,
+                                        size: 30,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        '예정된 일정이 없습니다',
+                                        style: TextStyle(
+                                          color: theme.textSecondary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : ListView.separated(
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: events.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 6),
+                                  itemBuilder: (context, index) {
+                                    final event = events[index];
+                                    final special = event.id.startsWith(
+                                      'anniversary:',
+                                    );
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6,
+                                      ),
+                                      child: _AgendaRow(
+                                        theme: theme,
+                                        event: event,
+                                        onTap: special
+                                            ? null
+                                            : () => widget.onEventPress(event),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                ),
               ),
             ],
           );

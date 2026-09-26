@@ -97,7 +97,10 @@ class LiveActivity {
 
   static bool get isAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  static bool get isSupportedPlatform => isIOS || isAndroid;
+
+  static bool get isMacOS =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+  static bool get isSupportedPlatform => isIOS || isAndroid || isMacOS;
 
   static Future<void> openNotificationSettings() async {
     if (isAndroid) await _channel.invokeMethod<void>('openSettings');

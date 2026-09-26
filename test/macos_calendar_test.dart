@@ -191,4 +191,49 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets(
+    'single-letter shortcuts stand down while a text field is focused',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      var creates = 0;
+      var toggled = ViewMode.month;
+      final controller = TextEditingController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MacosCalendarShell(
+              theme: lightTheme,
+              title: '달력',
+              account: '',
+              view: ViewMode.month,
+              onViewChanged: (value) => toggled = value,
+              onPrevious: () {},
+              onNext: () {},
+              onToday: () {},
+              onCreate: () => creates++,
+              onSearch: () {},
+              onManage: () {},
+              child: TextField(controller: controller, autofocus: true),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Unfocused: the bound letter fires its shortcut.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      expect(creates, 1);
+
+      // Focused in a text field: the same letter must type, not fire.
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      expect(creates, 1);
+      expect(toggled, ViewMode.month);
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
 }

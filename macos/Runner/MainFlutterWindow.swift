@@ -7,6 +7,8 @@ class MainFlutterWindow: NSWindow {
   private var notificationChannel: FlutterMethodChannel?
   private var sessionChannel: FlutterMethodChannel?
   private var windowChannel: FlutterMethodChannel?
+  private var menuChannel: FlutterMethodChannel?
+  private var calendarMenu: NSMenu?
   private var calendarFrame: NSRect?
   private var currentScreen = "login"
   private var fullscreenObserver: NSObjectProtocol?
@@ -16,6 +18,33 @@ class MainFlutterWindow: NSWindow {
     contentViewController = flutterViewController
     RegisterGeneratedPlugins(registry: flutterViewController)
     super.awakeFromNib()
+
+    let calendarMenuItem = NSMenuItem(title: "캘린더", action: nil, keyEquivalent: "")
+    let menu = NSMenu(title: "캘린더")
+    calendarMenuItem.submenu = menu
+    calendarMenu = menu
+    NSApp.mainMenu?.insertItem(calendarMenuItem, at: min(1, NSApp.mainMenu?.items.count ?? 0))
+
+    LiveActivityMenuBar.shared.register(with: flutterViewController.engine.binaryMessenger)
+
+    menuChannel = FlutterMethodChannel(
+      name: "calendar_app/menu",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    menuChannel?.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { result(nil); return }
+      switch call.method {
+      case "updateCalendarMenu":
+        guard let items = call.arguments as? [[String: Any]] else {
+          result(FlutterError(code: "invalid_arguments", message: "Expected calendar menu items", details: nil))
+          return
+        }
+        self.updateCalendarMenu(items)
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
 
     notificationChannel = FlutterMethodChannel(
       name: "calendar/desktop_notifications",
@@ -132,6 +161,58 @@ class MainFlutterWindow: NSWindow {
       self?.switchScreen(screen)
       result(nil)
     }
+  }
+
+  /// Invoked by the app menu's "업데이트 확인…" item.
+  @objc func triggerCheckForUpdates(_ sender: Any?) {
+    menuChannel?.invokeMethod("checkForUpdates", arguments: nil)
+  }
+
+  /// Invoked by the "보기" menu's "실시간 현황 요청 보내기…" item.
+  @objc func triggerLiveActivityMenu(_ sender: Any?) {
+    menuChannel?.invokeMethod("liveActivities", arguments: nil)
+  }
+
+  private func updateCalendarMenu(_ items: [[String: Any]]) {
+    guard let menu = calendarMenu else { return }
+    menu.removeAllItems()
+    for data in items {
+      guard let id = data["id"] as? String,
+            let title = data["title"] as? String else { continue }
+      if data["header"] as? Bool == true {
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        continue
+      }
+      let item = NSMenuItem(title: title, action: #selector(toggleCalendarVisibility(_:)), keyEquivalent: "")
+      item.target = self
+      item.representedObject = id
+      item.state = (data["visible"] as? Bool ?? true) ? .on : .off
+      menu.addItem(item)
+    }
+    if items.isEmpty {
+      let empty = NSMenuItem(title: "연결된 캘린더가 없습니다", action: nil, keyEquivalent: "")
+      empty.isEnabled = false
+      menu.addItem(empty)
+    }
+  }
+
+  @objc private func toggleCalendarVisibility(_ sender: NSMenuItem) {
+    guard let id = sender.representedObject as? String else { return }
+    sender.state = sender.state == .on ? .off : .on
+    menuChannel?.invokeMethod("toggleCalendarVisibility", arguments: [
+      "id": id,
+      "visible": sender.state == .on,
+    ])
+  }
+
+  /// Invoked by the app menu's "환경설정…" item (⌘,).
+  @objc func triggerPreferencesMenu(_ sender: Any?) {
+    NSApp.activate(ignoringOtherApps: true)
+    makeKeyAndOrderFront(nil)
+    menuChannel?.invokeMethod("openSettings", arguments: nil)
   }
 
   private func switchScreen(_ screen: String) {

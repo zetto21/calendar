@@ -28,6 +28,7 @@ import 'native/macos_window.dart';
 import 'screens/event_sheet.dart';
 import 'screens/list_view.dart';
 import 'screens/login_screen.dart';
+import 'screens/onboarding_guide.dart';
 import 'screens/signup_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/time_grid_view.dart';
@@ -243,12 +244,18 @@ class CalendarHome extends StatefulWidget {
 class _CalendarHomeState extends State<CalendarHome>
     with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  Widget? _eventSidePanel;
   ViewMode _view = ViewMode.month;
   bool _showPersonalCalendar = true;
   DateTime _anchorDate = DateTime.now();
   DateTime? _rollingWeekStart;
-  List<DateTime> get _visibleWeekDays => List.generate(7,
-      (i) => date_utils.addDays(_rollingWeekStart ?? date_utils.startOfWeek(_anchorDate), i));
+  List<DateTime> get _visibleWeekDays => List.generate(
+    7,
+    (i) => date_utils.addDays(
+      _rollingWeekStart ?? date_utils.startOfWeek(_anchorDate),
+      i,
+    ),
+  );
 
   void _changeView(ViewMode view) {
     setState(() {
@@ -290,6 +297,8 @@ class _CalendarHomeState extends State<CalendarHome>
   CalendarEvent? _hoveredEvent;
   String? _lastEventId;
   static const _defaultEventHour = 9;
+  String? _lastMacCalendarMenuSignature;
+  static const _macMenuChannel = MethodChannel('calendar_app/menu');
 
   @override
   void initState() {
@@ -317,12 +326,135 @@ class _CalendarHomeState extends State<CalendarHome>
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshImported());
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshLiveActivity());
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkForAppUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _checkForAppUpdate();
+      if (mounted) await _maybeShowOnboarding();
+    });
+    if (LiveActivity.isMacOS) {
+      _macMenuChannel.setMethodCallHandler((call) async {
+        switch (call.method) {
+          case 'liveActivities':
+            await _showLiveActivities();
+          case 'openSettings':
+            _openSettings();
+          case 'toggleCalendarVisibility':
+            final args = Map<String, dynamic>.from(call.arguments as Map);
+            await _toggleMenuCalendar(
+              args['id'] as String,
+              args['visible'] as bool,
+            );
+          case 'checkForUpdates':
+            await _checkForAppUpdate(manual: true);
+        }
+      });
+    }
   }
 
-  Future<void> _checkForAppUpdate() async {
+  Future<void> _toggleMenuCalendar(String id, bool visible) async {
+    if (id == 'personal') {
+      setState(() => _showPersonalCalendar = visible);
+      return;
+    }
+    if (id.startsWith('setting:')) {
+      switch (id.substring(8)) {
+        case 'anniversaries':
+          await _setDisplaySetting(
+            DisplaySetting.anniversaries,
+            visible,
+            () => _showAnniversaries = visible,
+          );
+        case 'holidays':
+          await _setDisplaySetting(
+            DisplaySetting.holidays,
+            visible,
+            () => _showHolidays = visible,
+          );
+        case 'lunar':
+          await _setDisplaySetting(
+            DisplaySetting.lunar,
+            visible,
+            () => _showLunar = visible,
+          );
+        case 'solarTerms':
+          await _setDisplaySetting(
+            DisplaySetting.solarTerms,
+            visible,
+            () => _showSolarTerms = visible,
+          );
+      }
+      return;
+    }
+    if (!id.startsWith('import:')) return;
+    final parts = id.substring(7).split('|');
+    if (parts.length != 2) return;
+    await context.read<ImportedEvents>().setVisible(
+      parts[0],
+      parts[1],
+      visible,
+    );
+  }
+
+  void _syncMacCalendarMenu(ImportedEvents imported) {
+    if (!LiveActivity.isMacOS) return;
+    final items = <Map<String, Object>>[
+      {'id': 'section:calendars', 'title': '캘린더', 'header': true},
+      {'id': 'personal', 'title': '내 캘린더', 'visible': _showPersonalCalendar},
+      for (final source in imported.sources.entries)
+        for (final calendar in source.value)
+          {
+            'id': 'import:${source.key}|${calendar.id}',
+            'title': '${_calendarProviderName(source.key)} · ${calendar.title}',
+            'visible': imported.isVisible(source.key, calendar.id),
+          },
+      {'id': 'section:features', 'title': '기능 표시', 'header': true},
+      {
+        'id': 'setting:anniversaries',
+        'title': '법정 기념일',
+        'visible': _showAnniversaries,
+      },
+      {'id': 'setting:holidays', 'title': '공휴일', 'visible': _showHolidays},
+      {'id': 'setting:lunar', 'title': '음력', 'visible': _showLunar},
+      {'id': 'setting:solarTerms', 'title': '절기', 'visible': _showSolarTerms},
+    ];
+    final signature = items.toString();
+    if (_lastMacCalendarMenuSignature == signature) return;
+    _lastMacCalendarMenuSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _macMenuChannel.invokeMethod<void>('updateCalendarMenu', items);
+      }
+    });
+  }
+
+  String _calendarProviderName(String provider) => switch (provider) {
+    'google' => 'Google 캘린더',
+    'apple' => 'Apple 캘린더',
+    'naver' => '네이버 캘린더',
+    'notion' => 'Notion',
+    _ => provider,
+  };
+
+  Future<void> _checkForAppUpdate({bool manual = false}) async {
     final update = await AppUpdateService.check();
-    if (!mounted || update == null) return;
+    if (!mounted) return;
+    if (update == null) {
+      if (!manual) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('최신 버전입니다'),
+          content: const Text('이미 최신 버전을 사용하고 있습니다.'),
+          actions: [
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('확인'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -435,6 +567,10 @@ class _CalendarHomeState extends State<CalendarHome>
     _scaffoldKey.currentState?.closeDrawer();
     if (LiveActivity.isAndroid) {
       await _showAndroidLiveUpdates();
+      return;
+    }
+    if (LiveActivity.isMacOS) {
+      await _showMacLiveUpdates();
       return;
     }
     try {
@@ -621,6 +757,71 @@ class _CalendarHomeState extends State<CalendarHome>
     }
   }
 
+  Future<void> _showMacLiveUpdates() async {
+    try {
+      final status = await LiveActivity.status();
+      if (!mounted) return;
+      final candidates = _liveActivityCandidates();
+      final selected = await showCupertinoModalPopup<String>(
+        context: context,
+        builder: (context) => CupertinoActionSheet(
+          title: const Text('일정 실시간 현황'),
+          message: Text(
+            candidates.isEmpty
+                ? '진행 중이거나 10분 이내에 시작하는 시간 지정 일정이 없습니다.'
+                : '메뉴 막대에 일정 제목과 남은 시간을 표시합니다.',
+          ),
+          actions: [
+            for (final event in candidates)
+              CupertinoActionSheetAction(
+                onPressed: () => Navigator.pop(context, event.id),
+                child: Text(
+                  '${event.event.title} · ${event.end.difference(DateTime.now()).inMinutes.clamp(0, 99999)}분 남음',
+                ),
+              ),
+            if (status.eventIDs.isNotEmpty)
+              CupertinoActionSheetAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(context, '__end__'),
+                child: const Text('실시간 현황 종료'),
+              ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+        ),
+      );
+      if (selected == null || !mounted) return;
+      if (selected == '__end__') {
+        await LiveActivity.end();
+      } else {
+        final matches = _liveActivityCandidates().where(
+          (event) => event.id == selected,
+        );
+        if (matches.isEmpty) return;
+        await LiveActivity.start(matches.first);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              selected == '__end__'
+                  ? '실시간 현황을 종료했습니다.'
+                  : '메뉴 막대에 일정 실시간 현황을 표시합니다.',
+            ),
+          ),
+        );
+      }
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message ?? '실시간 현황을 처리하지 못했습니다.')),
+        );
+      }
+    }
+  }
+
   Future<void> _refreshLiveActivity() async {
     if (!mounted || !LiveActivity.isSupportedPlatform) return;
     try {
@@ -628,9 +829,10 @@ class _CalendarHomeState extends State<CalendarHome>
       if (!mounted) return;
       final candidates = _liveActivityCandidates();
       final activeIDs = status.eventIDs.toSet();
-      if (LiveActivity.isAndroid) {
-        // Android tracks only the event explicitly selected by the user.
-        // Stopping or dismissing the notification must not restart it.
+      if (LiveActivity.isAndroid || LiveActivity.isMacOS) {
+        // Android and macOS track only the event explicitly selected by the
+        // user. Stopping or dismissing the notification/menu bar item must
+        // not restart it.
         final selected = candidates.where(
           (event) => activeIDs.contains(event.id),
         );
@@ -731,6 +933,7 @@ class _CalendarHomeState extends State<CalendarHome>
     AccountPreferences.instance.syncSucceeded.removeListener(
       _showSettingsSyncStatus,
     );
+    if (LiveActivity.isMacOS) _macMenuChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -1580,6 +1783,44 @@ class _CalendarHomeState extends State<CalendarHome>
     }
     final editing =
         draft != null && !(newEventDuration != null && draft.id.isEmpty);
+    if (useDesktopLayout) {
+      final store = context.read<EventStore>();
+      final panelKey = UniqueKey();
+      void closePanel() {
+        if (mounted && _eventSidePanel?.key == panelKey) {
+          setState(() => _eventSidePanel = null);
+        }
+      }
+
+      setState(() {
+        _eventSidePanel = EventSheet(
+          key: panelKey,
+          embedded: true,
+          onClose: closePanel,
+          theme: Theme.of(context).brightness == Brightness.dark
+              ? darkTheme
+              : lightTheme,
+          draft: draft,
+          isEditing: editing,
+          initialDate: date,
+          initialTime: time,
+          onSave: (event) async {
+            await onBeforeSave?.call();
+            final saved = await store.saveEvent(event);
+            if (syncToSystem) await _syncToEventKit(store, saved);
+            await _refreshLiveActivity();
+            closePanel();
+          },
+          onDelete: onDelete == null
+              ? null
+              : () async {
+                  await onDelete();
+                  closePanel();
+                },
+        );
+      });
+      return;
+    }
     _collapseAgenda();
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
@@ -1654,12 +1895,54 @@ class _CalendarHomeState extends State<CalendarHome>
     }
   }
 
+  static const _onboardingKey = 'onboarding.completed.v1';
+
+  Future<void> _maybeShowOnboarding() async {
+    if (!mounted) return;
+    final seen = await AccountPreferences.instance.get(_onboardingKey);
+    if (!mounted || seen == true) return;
+    final theme = Theme.of(context).brightness == Brightness.dark
+        ? darkTheme
+        : lightTheme;
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: '시작하기 가이드',
+      barrierColor: Colors.black.withValues(alpha: 0.32),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dialogContext, _, _) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440, maxHeight: 560),
+              child: OnboardingGuide(
+                theme: theme,
+                onManageCalendars: () {
+                  Navigator.of(dialogContext).pop();
+                  unawaited(_showCalendarConnections());
+                },
+                onOpenSettings: () {
+                  Navigator.of(dialogContext).pop();
+                  _openSettings();
+                },
+                onFinish: () => Navigator.of(dialogContext).pop(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    unawaited(AccountPreferences.instance.set(_onboardingKey, true));
+  }
+
   void _openSettings() {
     final settings = SettingsScreen(
       theme: Theme.of(context).brightness == Brightness.dark
           ? darkTheme
           : lightTheme,
       accountLabel: widget.user?.email ?? '게스트',
+      onCalendarConnections: _showCalendarConnections,
       onLogout: widget.onLogout,
       onBackup: _backupData,
       onRestore: _restoreData,
@@ -1712,6 +1995,7 @@ class _CalendarHomeState extends State<CalendarHome>
         : lightTheme;
     final store = context.watch<EventStore>();
     final imported = context.watch<ImportedEvents>();
+    _syncMacCalendarMenu(imported);
     final (from, to) = _range;
     final expanded = expandEvents(
       _combineEvents(
@@ -1777,7 +2061,7 @@ class _CalendarHomeState extends State<CalendarHome>
                 onDateSelected: (date) {
                   setState(() {
                     _anchorDate = date;
-      _rollingWeekStart = null;
+                    _rollingWeekStart = null;
                     _selectedKey = date_utils.toDateKey(date);
                   });
                   _refreshHolidays();
@@ -1880,7 +2164,7 @@ class _CalendarHomeState extends State<CalendarHome>
                   ),
                 ),
                 child: store.loaded
-                    ? _buildView(theme, expanded)
+                    ? _buildDesktopView(theme, expanded)
                     : const Center(child: CupertinoActivityIndicator()),
               )
             : Column(
@@ -1895,7 +2179,7 @@ class _CalendarHomeState extends State<CalendarHome>
                     onDateSelected: (date) {
                       setState(() {
                         _anchorDate = date;
-      _rollingWeekStart = null;
+                        _rollingWeekStart = null;
                         _selectedKey = date_utils.toDateKey(date);
                       });
                       _refreshHolidays();
@@ -1969,10 +2253,34 @@ class _CalendarHomeState extends State<CalendarHome>
     );
   }
 
+  Widget _buildDesktopView(AppTheme theme, EventMap expanded) => LayoutBuilder(
+    builder: (context, constraints) {
+      final editor = _eventSidePanel;
+      if (editor == null ||
+          (_view == ViewMode.month && constraints.maxWidth >= 760)) {
+        return _buildView(theme, expanded);
+      }
+      if (constraints.maxWidth < 600) return editor;
+      return Row(
+        children: [
+          Expanded(child: _buildView(theme, expanded)),
+          Container(
+            width: constraints.maxWidth >= 1000 ? 280 : 230,
+            decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: theme.border)),
+            ),
+            child: editor,
+          ),
+        ],
+      );
+    },
+  );
+
   Widget _buildView(AppTheme theme, EventMap expanded) {
     switch (_view) {
       case ViewMode.month:
         return MonthAgenda(
+          sidePanel: _eventSidePanel,
           theme: theme,
           viewDate: _anchorDate,
           events: expanded,

@@ -15,6 +15,7 @@ class SettingsScreen extends StatelessWidget {
   final String accountLabel;
   final VoidCallback onLogout;
   final VoidCallback? onLiveActivities;
+  final VoidCallback? onCalendarConnections;
   final Future<List<String>> Function(ValueChanged<double> onProgress)?
   onBackup;
   final Future<void> Function()? onRestore;
@@ -25,6 +26,7 @@ class SettingsScreen extends StatelessWidget {
     required this.accountLabel,
     required this.onLogout,
     this.onLiveActivities,
+    this.onCalendarConnections,
     this.onBackup,
     this.onRestore,
   });
@@ -99,6 +101,21 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ],
               ),
+              if (onCalendarConnections != null)
+                CupertinoListSection.insetGrouped(
+                  header: const Text('캘린더'),
+                  children: [
+                    CupertinoListTile.notched(
+                      leading: _icon(
+                        CupertinoIcons.link,
+                        CupertinoColors.systemBlue,
+                      ),
+                      title: const Text('캘린더 연동'),
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: onCalendarConnections,
+                    ),
+                  ],
+                ),
               if (onLiveActivities != null) ...[
                 CupertinoListSection.insetGrouped(
                   header: const Text('실시간 현황'),
@@ -249,6 +266,20 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+      if (onCalendarConnections != null)
+        _MacSection(
+          '캘린더',
+          CupertinoIcons.calendar,
+          CupertinoColors.systemBlue,
+          [
+            _MacRow(
+              icon: CupertinoIcons.link,
+              color: CupertinoColors.systemBlue,
+              title: '캘린더 연동',
+              onTap: onCalendarConnections,
+            ),
+          ],
+        ),
       if (onLiveActivities != null)
         _MacSection(
           '실시간 현황',
@@ -413,6 +444,10 @@ class SettingsScreen extends StatelessWidget {
                       onTap: () => _confirmLogout(context),
                     ),
                   ]),
+                  if (onCalendarConnections != null)
+                    section('캘린더', [
+                      tile(Icons.link, '캘린더 연동', onTap: onCalendarConnections),
+                    ]),
                   if (onLiveActivities != null)
                     section('실시간 업데이트', [
                       tile(
