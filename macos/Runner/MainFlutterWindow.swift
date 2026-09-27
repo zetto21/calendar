@@ -8,8 +8,6 @@ class MainFlutterWindow: NSWindow {
   private var sessionChannel: FlutterMethodChannel?
   private var windowChannel: FlutterMethodChannel?
   private var menuChannel: FlutterMethodChannel?
-  private var devToolsChannel: FlutterMethodChannel?
-  private var devToolsServiceUri: String?
   private var calendarMenu: NSMenu?
   private var calendarFrame: NSRect?
   private var currentScreen = "login"
@@ -45,52 +43,6 @@ class MainFlutterWindow: NSWindow {
         result(nil)
       default:
         result(FlutterMethodNotImplemented)
-      }
-    }
-
-    devToolsChannel = FlutterMethodChannel(
-      name: "calendar_app/devtools",
-      binaryMessenger: flutterViewController.engine.binaryMessenger
-    )
-    devToolsChannel?.setMethodCallHandler { call, result in
-      if call.method == "setServiceUri" {
-        self.devToolsServiceUri = call.arguments as? String
-        result(nil)
-        return
-      }
-      guard call.method == "open" else {
-        result(FlutterMethodNotImplemented)
-        return
-      }
-      guard let serviceUri = self.devToolsServiceUri else {
-        result(FlutterError(
-          code: "devtools_unavailable",
-          message: "Flutter VM Service is unavailable. Run the app in debug mode.",
-          details: nil
-        ))
-        return
-      }
-      guard let dart = Self.findDartExecutable() else {
-        result(FlutterError(
-          code: "dart_not_found",
-          message: "Dart SDK was not found. Check the Flutter SDK installation.",
-          details: nil
-        ))
-        return
-      }
-
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: dart)
-      process.arguments = ["devtools", "--launch-browser", serviceUri]
-      do {
-        try process.run()
-        result(true)
-      } catch {
-        result(FlutterError(
-          code: "devtools_launch_failed",
-          message: error.localizedDescription,
-          details: nil
-        ))
       }
     }
 
@@ -211,15 +163,6 @@ class MainFlutterWindow: NSWindow {
     }
   }
 
-  private static func findDartExecutable() -> String? {
-    let candidates = [
-      "/opt/homebrew/share/flutter/bin/cache/dart-sdk/bin/dart",
-      "/opt/homebrew/share/flutter/bin/dart",
-      "/usr/local/share/flutter/bin/cache/dart-sdk/bin/dart",
-      "/usr/local/share/flutter/bin/dart",
-    ]
-    return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-  }
 
   /// Invoked by the app menu's "업데이트 확인…" item.
   @objc func triggerCheckForUpdates(_ sender: Any?) {
