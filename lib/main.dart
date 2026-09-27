@@ -314,12 +314,6 @@ class _CalendarHomeState extends State<CalendarHome>
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _showEventSyncStatus());
-    AccountPreferences.instance.syncSucceeded.addListener(
-      _showSettingsSyncStatus,
-    );
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _showSettingsSyncStatus(),
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _runSync());
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _loadHolidays(_anchorDate.year),
@@ -507,21 +501,6 @@ class _CalendarHomeState extends State<CalendarHome>
         4201,
         '일정 동기화 대기',
         '일정은 이 기기에 저장됐습니다. 서버 연결 후 다른 기기에 동기화됩니다.',
-      ),
-    );
-  }
-
-  void _showSettingsSyncStatus() {
-    if (!mounted ||
-        widget.user == null ||
-        AccountPreferences.instance.syncSucceeded.value != false) {
-      return;
-    }
-    unawaited(
-      _showStatusNotice(
-        4202,
-        '설정 동기화 대기',
-        '설정은 이 기기에 저장됐습니다. 서버 연결 후 계정에 동기화됩니다.',
       ),
     );
   }
@@ -762,33 +741,267 @@ class _CalendarHomeState extends State<CalendarHome>
       final status = await LiveActivity.status();
       if (!mounted) return;
       final candidates = _liveActivityCandidates();
-      final selected = await showCupertinoModalPopup<String>(
+      final dark = Theme.of(context).brightness == Brightness.dark;
+      final primaryText = dark
+          ? const Color(0xFFF4F4F5)
+          : const Color(0xFF242427);
+      final secondaryText = dark
+          ? const Color(0xFF9999A1)
+          : const Color(0xFF777780);
+      final selected = await showDialog<String>(
         context: context,
-        builder: (context) => CupertinoActionSheet(
-          title: const Text('일정 실시간 현황'),
-          message: Text(
-            candidates.isEmpty
-                ? '진행 중이거나 10분 이내에 시작하는 시간 지정 일정이 없습니다.'
-                : '메뉴 막대에 일정 제목과 남은 시간을 표시합니다.',
+        barrierColor: Colors.black.withValues(alpha: 0.62),
+        builder: (dialogContext) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
           ),
-          actions: [
-            for (final event in candidates)
-              CupertinoActionSheetAction(
-                onPressed: () => Navigator.pop(context, event.id),
-                child: Text(
-                  '${event.event.title} · ${event.end.difference(DateTime.now()).inMinutes.clamp(0, 99999)}분 남음',
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480, maxHeight: 620),
+            child: Container(
+              decoration: BoxDecoration(
+                color: dark ? const Color(0xFF232326) : Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: dark
+                      ? Colors.white.withValues(alpha: .09)
+                      : Colors.black.withValues(alpha: .07),
                 ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x66000000),
+                    blurRadius: 48,
+                    offset: Offset(0, 20),
+                  ),
+                ],
               ),
-            if (status.eventIDs.isNotEmpty)
-              CupertinoActionSheetAction(
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(context, '__end__'),
-                child: const Text('실시간 현황 종료'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 20, 14, 18),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF5B9BFF)
+                                .withValues(alpha: .15),
+                            borderRadius: BorderRadius.circular(13),
+                          ),
+                          child: const Icon(
+                            Icons.bolt_rounded,
+                            color: Color(0xFF78AAFF),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '일정 실시간 현황',
+                                style: TextStyle(
+                                  color: primaryText,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '메뉴 막대에 표시할 일정을 선택하세요',
+                                style: TextStyle(
+                                  color: secondaryText,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: '닫기',
+                          onPressed: () => Navigator.pop(dialogContext),
+                          icon: Icon(Icons.close_rounded, color: secondaryText),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Divider(
+                    height: 1,
+                    color: dark
+                        ? Colors.white.withValues(alpha: .08)
+                        : Colors.black.withValues(alpha: .07),
+                  ),
+                  Flexible(
+                    child: candidates.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(30, 42, 30, 42),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.event_available_rounded,
+                                  size: 42,
+                                  color: secondaryText.withValues(alpha: .7),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '표시할 일정이 없습니다',
+                                  style: TextStyle(
+                                    color: primaryText,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(height: 7),
+                                Text(
+                                  '진행 중이거나 10분 이내에 시작하는\n시간 지정 일정이 여기에 표시됩니다.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: secondaryText,
+                                    height: 1.45,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            padding: const EdgeInsets.all(14),
+                            itemCount: candidates.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: 6),
+                            itemBuilder: (context, index) {
+                              final event = candidates[index];
+                              final active = status.eventIDs.contains(event.id);
+                              final remaining = event.end
+                                  .difference(DateTime.now())
+                                  .inMinutes
+                                  .clamp(0, 99999);
+                              return Material(
+                                color: active
+                                    ? const Color(0xFF5B9BFF)
+                                          .withValues(alpha: .12)
+                                    : (dark
+                                          ? Colors.white.withValues(alpha: .045)
+                                          : Colors.black.withValues(
+                                              alpha: .035,
+                                            )),
+                                borderRadius: BorderRadius.circular(13),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(13),
+                                  onTap: () =>
+                                      Navigator.pop(dialogContext, event.id),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 13,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 4,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF78AAFF),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                event.event.title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: primaryText,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                '${TimeOfDay.fromDateTime(event.start.toLocal()).format(dialogContext)} – ${TimeOfDay.fromDateTime(event.end.toLocal()).format(dialogContext)}',
+                                                style: TextStyle(
+                                                  color: secondaryText,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          '$remaining분',
+                                          style: const TextStyle(
+                                            color: Color(0xFF9FC0FF),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(
+                                          active
+                                              ? Icons.check_circle_rounded
+                                              : Icons.chevron_right_rounded,
+                                          color: active
+                                              ? const Color(0xFF78AAFF)
+                                              : secondaryText,
+                                          size: 19,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  if (status.eventIDs.isNotEmpty) ...[
+                    Divider(
+                      height: 1,
+                      color: dark
+                          ? Colors.white.withValues(alpha: .08)
+                          : Colors.black.withValues(alpha: .07),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              Navigator.pop(dialogContext, '__end__'),
+                          icon: const Icon(
+                            Icons.stop_circle_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('실시간 현황 종료'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF9292),
+                            side: BorderSide(
+                              color: const Color(0xFFFF9292)
+                                  .withValues(alpha: .35),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-          ],
-          cancelButton: CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
+            ),
           ),
         ),
       );
@@ -930,9 +1143,6 @@ class _CalendarHomeState extends State<CalendarHome>
   void dispose() {
     _eventSyncTimer?.cancel();
     _eventStore.syncSucceeded.removeListener(_showEventSyncStatus);
-    AccountPreferences.instance.syncSucceeded.removeListener(
-      _showSettingsSyncStatus,
-    );
     if (LiveActivity.isMacOS) _macMenuChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -2165,7 +2375,7 @@ class _CalendarHomeState extends State<CalendarHome>
                   ),
                 ),
                 child: store.loaded
-                    ? _buildDesktopView(theme, expanded)
+                    ? _animateView(_buildDesktopView(theme, expanded))
                     : const Center(child: CupertinoActivityIndicator()),
               )
             : Column(
@@ -2215,7 +2425,7 @@ class _CalendarHomeState extends State<CalendarHome>
                         : Stack(
                             children: [
                               Positioned.fill(
-                                child: _buildView(theme, expanded),
+                                child: _animateView(_buildView(theme, expanded)),
                               ),
                               Positioned(
                                 right: 20,
@@ -2250,6 +2460,26 @@ class _CalendarHomeState extends State<CalendarHome>
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _animateView(Widget child) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return ClipRect(
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey(_view),
+        tween: Tween(begin: 0, end: 1),
+        duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+        child: child,
+        builder: (context, progress, child) => Opacity(
+          opacity: progress,
+          child: Transform.translate(
+            offset: Offset(0, 12 * (1 - progress)),
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -2589,7 +2819,7 @@ class _AccountDrawer extends StatelessWidget {
               const SizedBox(height: 16),
               Divider(color: theme.border, height: 1),
               const SizedBox(height: 20),
-              _sectionTitle('표시할 캘린더'),
+              _sectionTitle('내 캘린더'),
               const SizedBox(height: 6),
               if (imports.sources.isNotEmpty) ...[
                 for (final entry in imports.sources.entries)

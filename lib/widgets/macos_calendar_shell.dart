@@ -84,7 +84,7 @@ class MacosCalendarShell extends StatelessWidget {
   );
 
   List<Widget> _displayControls({bool dialog = false}) => [
-    _sectionTitle('표시할 캘린더'),
+    _sectionTitle('내 캘린더'),
     for (final control in calendarControls)
       if (dialog && control is CheckboxListTile)
         _CalendarToggle(control: control)
@@ -630,7 +630,7 @@ class MacosCalendarShell extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: theme.text,
-                                    fontSize: 24,
+                                    fontSize: view == ViewMode.list ? 20 : 24,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: -0.7,
                                   ),
@@ -641,13 +641,14 @@ class MacosCalendarShell extends StatelessWidget {
                                 CupertinoIcons.chevron_left,
                                 onPrevious,
                               ),
-                              TextButton(
-                                onPressed: onToday,
-                                style: TextButton.styleFrom(
-                                  foregroundColor: theme.text,
+                              if (view != ViewMode.list)
+                                TextButton(
+                                  onPressed: onToday,
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: theme.text,
+                                  ),
+                                  child: const Text('오늘'),
                                 ),
-                                child: const Text('오늘'),
-                              ),
                               _icon(
                                 '다음 · ⌘→',
                                 CupertinoIcons.chevron_right,

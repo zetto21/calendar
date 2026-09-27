@@ -31,7 +31,7 @@ class EventListView extends StatelessWidget {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(24, 10, 24, 112),
+      padding: const EdgeInsets.fromLTRB(28, 14, 28, 112),
       itemCount: keys.length,
       itemBuilder: (context, index) {
         final key = keys[index];
@@ -44,8 +44,56 @@ class EventListView extends StatelessWidget {
                 .minutesFromTime(a.time!)
                 .compareTo(date_utils.minutesFromTime(b.time!));
           });
+        final isToday = date_utils.toDateKey(DateTime.now()) == key;
         return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 18, 0, 8),
+              child: Row(
+                children: [
+                  Text(
+                    '${date.month}월 ${date.day}일',
+                    style: TextStyle(
+                      color: isToday ? theme.accent : theme.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    date_utils.weekdays[date.weekday % 7],
+                    style: TextStyle(color: theme.textMuted, fontSize: 12),
+                  ),
+                  if (isToday) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.accent.withValues(alpha: .14),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '오늘',
+                        style: TextStyle(
+                          color: theme.accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  Text(
+                    '${dayEvents.length}개',
+                    style: TextStyle(color: theme.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
             for (
               var eventIndex = 0;
               eventIndex < dayEvents.length;
@@ -54,7 +102,7 @@ class EventListView extends StatelessWidget {
               _EventRow(
                 theme: theme,
                 date: date,
-                showDate: eventIndex == 0,
+                showDate: false,
                 event: dayEvents[eventIndex],
                 onTap: () => onEventPress(dayEvents[eventIndex]),
               ),
@@ -91,8 +139,8 @@ class _EventRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        constraints: const BoxConstraints(minHeight: 94),
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        constraints: BoxConstraints(minHeight: showDate ? 94 : 62),
+        padding: EdgeInsets.symmetric(vertical: showDate ? 9 : 6),
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(color: theme.border.withValues(alpha: 0.65)),
@@ -102,7 +150,7 @@ class _EventRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              width: 60,
+              width: showDate ? 60 : 0,
               child: showDate
                   ? Column(
                       children: [
@@ -130,7 +178,7 @@ class _EventRow extends StatelessWidget {
             ),
             SizedBox(
               width: 7,
-              height: 76,
+              height: showDate ? 76 : 46,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: color,
@@ -138,7 +186,7 @@ class _EventRow extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 24),
+            SizedBox(width: showDate ? 24 : 12),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(top: 2, right: 4),

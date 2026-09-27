@@ -72,7 +72,7 @@ class _TopBarState extends State<TopBar> {
                           maxLines: 1,
                           style: TextStyle(
                             color: theme.text,
-                            fontSize: 22,
+                            fontSize: widget.view == ViewMode.list ? 18 : 22,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.3,
                           ),

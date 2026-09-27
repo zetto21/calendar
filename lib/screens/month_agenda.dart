@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 import '../logic/date_utils.dart' as dates;
 import '../models/calendar_event.dart';
@@ -62,6 +64,101 @@ class _MonthAgendaState extends State<MonthAgenda> {
   double _drag = 0;
   double _horizontalDrag = 0;
   bool _collapseImmediately = false;
+  Timer? _scrollIdle;
+  double _scrollDistance = 0;
+  bool _scrollNavigated = false;
+  double _monthDirection = 1;
+
+  int get _monthIndex => widget.viewDate.year * 12 + widget.viewDate.month;
+
+  @override
+  void didUpdateWidget(covariant MonthAgenda oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final previous = oldWidget.viewDate.year * 12 + oldWidget.viewDate.month;
+    if (_monthIndex != previous) {
+      _monthDirection = _monthIndex > previous ? 1 : -1;
+    }
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent ||
+        event.scrollDelta.dx.abs() <= event.scrollDelta.dy.abs())
+      return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      _scrollIdle?.cancel();
+      _scrollIdle = Timer(const Duration(milliseconds: 180), () {
+        _scrollDistance = 0;
+        _scrollNavigated = false;
+      });
+      if (_scrollNavigated) return;
+      _scrollDistance += event.scrollDelta.dx;
+      if (_scrollDistance.abs() < 48) return;
+      _scrollNavigated = true;
+      (_scrollDistance > 0 ? widget.onNextMonth : widget.onPreviousMonth)
+          ?.call();
+    });
+  }
+
+  Widget _monthNavigation(Widget child) => Listener(
+    onPointerSignal: _onPointerSignal,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      supportedDevices: const {
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.touch,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      },
+      onHorizontalDragStart: (_) => _horizontalDrag = 0,
+      onHorizontalDragUpdate: (details) => _horizontalDrag += details.delta.dx,
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        final distance = _horizontalDrag;
+        _horizontalDrag = 0;
+        if (distance.abs() < 48 && velocity.abs() < 300) return;
+        final direction = velocity.abs() >= 300 ? velocity : distance;
+        (direction < 0 ? widget.onNextMonth : widget.onPreviousMonth)?.call();
+      },
+      onHorizontalDragCancel: () => _horizontalDrag = 0,
+      child: ClipRect(
+        child: AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 300),
+          switchInCurve: Curves.easeInOutCubic,
+          switchOutCurve: Curves.easeInOutCubic,
+          layoutBuilder: (current, previous) => Stack(
+            children: [
+              for (final outgoing in previous)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(child: outgoing),
+                  ),
+                ),
+              if (current != null) current,
+            ],
+          ),
+          transitionBuilder: (child, animation) {
+            final incoming = child.key == ValueKey(_monthIndex);
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: Offset(incoming ? _monthDirection : -_monthDirection, 0),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            );
+          },
+          child: KeyedSubtree(key: ValueKey(_monthIndex), child: child),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  void dispose() {
+    _scrollIdle?.cancel();
+    super.dispose();
+  }
 
   void _collapse() {
     if (!_open) return;
@@ -112,24 +209,26 @@ class _MonthAgendaState extends State<MonthAgenda> {
           return Row(
             children: [
               Expanded(
-                child: SingleChildScrollView(
-                  child: MonthView(
-                    theme: theme,
-                    viewDate: widget.viewDate,
-                    events: widget.events,
-                    selectedKey: widget.selectedKey,
-                    showHolidays: widget.showHolidays,
-                    holidayNames: widget.holidayNames,
-                    solarTermNames: widget.solarTermNames,
-                    anniversaryNames: widget.anniversaryNames,
-                    showLunar: widget.showLunar,
-                    rowHeight: math.max(
-                      110,
-                      (constraints.maxHeight - 28) / rows,
+                child: _monthNavigation(
+                  SingleChildScrollView(
+                    child: MonthView(
+                      theme: theme,
+                      viewDate: widget.viewDate,
+                      events: widget.events,
+                      selectedKey: widget.selectedKey,
+                      showHolidays: widget.showHolidays,
+                      holidayNames: widget.holidayNames,
+                      solarTermNames: widget.solarTermNames,
+                      anniversaryNames: widget.anniversaryNames,
+                      showLunar: widget.showLunar,
+                      rowHeight: math.max(
+                        110,
+                        (constraints.maxHeight - 28) / rows,
+                      ),
+                      onSelectDate: widget.onSelectDate,
+                      onEventMove: widget.onEventMove,
+                      onEventHover: widget.onEventHover,
                     ),
-                    onSelectDate: widget.onSelectDate,
-                    onEventMove: widget.onEventMove,
-                    onEventHover: widget.onEventHover,
                   ),
                 ),
               ),
@@ -211,7 +310,9 @@ class _MonthAgendaState extends State<MonthAgenda> {
                           child: _timeline
                               ? TimeGridView(
                                   embedded: true,
-                                  key: ValueKey('desktop-${widget.selectedKey}'),
+                                  key: ValueKey(
+                                    'desktop-${widget.selectedKey}',
+                                  ),
                                   theme: theme,
                                   days: [day],
                                   events: {
@@ -289,25 +390,8 @@ class _MonthAgendaState extends State<MonthAgenda> {
           },
           child: Column(
             children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onHorizontalDragStart: (_) => _horizontalDrag = 0,
-                onHorizontalDragUpdate: (details) =>
-                    _horizontalDrag += details.delta.dx,
-                onHorizontalDragEnd: (details) {
-                  final velocity = details.primaryVelocity ?? 0;
-                  final distance = _horizontalDrag;
-                  _horizontalDrag = 0;
-                  if (distance.abs() < 48 && velocity.abs() < 300) return;
-                  final direction = velocity.abs() >= 300 ? velocity : distance;
-                  if (direction < 0) {
-                    widget.onNextMonth?.call();
-                  } else {
-                    widget.onPreviousMonth?.call();
-                  }
-                },
-                onHorizontalDragCancel: () => _horizontalDrag = 0,
-                child: AnimatedContainer(
+              _monthNavigation(
+                AnimatedContainer(
                   duration:
                       _collapseImmediately ||
                           MediaQuery.disableAnimationsOf(context)

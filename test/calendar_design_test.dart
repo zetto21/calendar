@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +9,115 @@ import 'package:calendar_app_flutter/theme/app_theme.dart';
 import 'package:calendar_app_flutter/widgets/top_bar.dart';
 
 void main() {
+  testWidgets('month changes slide in the navigation direction', (
+    tester,
+  ) async {
+    Widget calendar(int month, {bool reduceMotion = false}) => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(disableAnimations: reduceMotion),
+        child: Scaffold(
+          body: MonthAgenda(
+            theme: lightTheme,
+            viewDate: DateTime(2026, month),
+            events: const {},
+            selectedKey: '2026-09-23',
+            onSelectDate: (_) {},
+            onEventPress: (_) {},
+            onSlotPress: (_, _) {},
+          ),
+        ),
+      ),
+    );
+    SlideTransition transition(int month) => tester.widget<SlideTransition>(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey(2026 * 12 + month)),
+            matching: find.byType(SlideTransition),
+          )
+          .first,
+    );
+    await tester.pumpWidget(calendar(9));
+    await tester.pumpWidget(calendar(10));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(transition(10).position.value.dx, greaterThan(0));
+    expect(transition(9).position.value.dx, lessThan(0));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey(2026 * 12 + 9)), findsNothing);
+    await tester.pumpWidget(calendar(9));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(transition(9).position.value.dx, lessThan(0));
+    expect(transition(10).position.value.dx, greaterThan(0));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(calendar(10, reduceMotion: true));
+    await tester.pump();
+    expect(transition(10).position.value, Offset.zero);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('desktop month supports mouse drags and trackpad scrolling', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    var previous = 0;
+    var next = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthAgenda(
+            theme: lightTheme,
+            viewDate: DateTime(2026, 9),
+            events: const {},
+            selectedKey: '2026-09-23',
+            onSelectDate: (_) {},
+            onEventPress: (_) {},
+            onSlotPress: (_, _) {},
+            onPreviousMonth: () => previous++,
+            onNextMonth: () => next++,
+          ),
+        ),
+      ),
+    );
+    await tester.drag(
+      find.text('23'),
+      const Offset(-160, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(next, 1);
+    await tester.drag(
+      find.text('23'),
+      const Offset(160, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(previous, 1);
+    final position = tester.getCenter(find.text('23'));
+    for (var i = 0; i < 3; i++) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: position,
+          scrollDelta: const Offset(60, 0),
+        ),
+      );
+    }
+    expect(next, 2);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: position, scrollDelta: const Offset(-60, 0)),
+    );
+    expect(previous, 2);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('anniversaries appear in agenda and all-day timeline', (
     tester,
   ) async {

@@ -796,8 +796,9 @@ class _DayColumnState extends State<_DayColumn> {
               onVerticalDragEnd: widget.onRangeCreate == null
                   ? null
                   : (_) => _finishCreate(),
-              onVerticalDragCancel: () =>
-                  setState(() => _createFrom = _createTo = null),
+              onVerticalDragCancel: widget.onRangeCreate == null
+                  ? null
+                  : () => setState(() => _createFrom = _createTo = null),
               child: Column(
                 children: [
                   for (final h in date_utils.hoursOfDay)

@@ -6,8 +6,6 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
-import '../services/desktop_notifications.dart';
-import '../services/server_connection_notifications.dart';
 
 /// Keeps connection monitoring alive across all app pages and routes.
 class ServerConnectionMonitor extends StatefulWidget {
@@ -37,16 +35,11 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
 
   bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
-  /// Web and desktop get a quiet, non-blocking banner instead of a modal.
-  bool get _quiet =>
-      kIsWeb ||
-      defaultTargetPlatform == TargetPlatform.macOS ||
-      defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.linux;
+  /// Web gets a quiet banner. Native apps show an in-app popup.
+  bool get _quiet => kIsWeb;
 
   OverlayEntry? _banner;
   bool _bannerDismissed = false;
-  bool _nativeWarningShown = false;
 
   void _showBanner() {
     if (_banner != null || _bannerDismissed) return;
@@ -117,7 +110,6 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      unawaited(ServerConnectionNotifications.initialize());
       _checkConnection();
     });
     _startTimer();
@@ -152,14 +144,9 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
               AuthService.instance.checkConnection)();
       if (!mounted) return;
       if (!connected) throw ServerConnectionException();
-      final wasUnavailable = _lastAvailability == false;
       _lastAvailability = true;
       ServerConnectionMonitor.available.value = true;
-      if (wasUnavailable) {
-        await ServerConnectionNotifications.showReconnected();
-      }
       if (!mounted) return;
-      _nativeWarningShown = false;
       _bannerDismissed = false;
       _hideBanner();
       final route = _connectionRoute;
@@ -169,13 +156,8 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
       final wasConnected = _lastAvailability != false;
       _lastAvailability = false;
       ServerConnectionMonitor.available.value = false;
-      if (wasConnected) {
-        _nativeWarningShown =
-            await ServerConnectionNotifications.showDisconnected();
-      }
       if (!mounted) return;
-      if (_foreground &&
-          !(DesktopNotifications.supported && _nativeWarningShown)) {
+      if (_foreground && wasConnected) {
         _quiet ? _showBanner() : _showConnectionAlert();
       }
     } catch (_) {
@@ -198,9 +180,9 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
               actionsAlignment: MainAxisAlignment.center,
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  onPressed: _checkConnection,
                   style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text('새로고침'),
+                  child: const Text('다시 연결 시도'),
                 ),
               ],
             ),
@@ -214,9 +196,9 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
               actions: [
                 CupertinoDialogAction(
                   isDefaultAction: true,
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  onPressed: _checkConnection,
                   child: Text(
-                    '새로고침',
+                    '다시 연결 시도',
                     style: TextStyle(
                       color: CupertinoColors.systemRed.resolveFrom(
                         dialogContext,
