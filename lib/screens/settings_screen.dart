@@ -363,7 +363,10 @@ class SettingsScreen extends StatelessWidget {
         ],
       ),
     ];
-    return _MacSettings(theme: theme, sections: sections);
+    return _MacSettings(
+      theme: theme,
+      sections: sections,
+    );
   }
 
   Widget _buildAndroid(BuildContext context) {
@@ -735,13 +738,17 @@ class _MacSettings extends StatefulWidget {
   final AppTheme theme;
   final List<_MacSection> sections;
 
-  const _MacSettings({required this.theme, required this.sections});
+  const _MacSettings({
+    required this.theme,
+    required this.sections,
+  });
 
   @override
   State<_MacSettings> createState() => _MacSettingsState();
 }
 
 class _MacSettingsState extends State<_MacSettings> {
+
   Widget _badge(IconData icon, Color color, {double size = 22}) => Container(
     width: size,
     height: size,
@@ -796,7 +803,9 @@ class _MacSettingsState extends State<_MacSettings> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (final section in widget.sections) ...[
+                  for (final section in [
+                    ...widget.sections,
+                  ]) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
                       child: Text(
