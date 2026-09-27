@@ -2068,6 +2068,7 @@ class _CalendarHomeState extends State<CalendarHome>
                 },
                 onConnect: _showCalendarConnections,
                 onSettings: _openSettings,
+                eventEditorOpen: _eventSidePanel != null,
                 calendarControls: [
                   CheckboxListTile(
                     dense: true,
