@@ -6,6 +6,7 @@ import 'account_preferences.dart';
 
 import '../models/calendar_event.dart';
 import '../services/auth_service.dart';
+import '../services/kbo_schedule.dart';
 
 class ImportedEvents extends ChangeNotifier {
   static const _sourcesKey = 'calendar.import.sources.v1';
@@ -193,6 +194,10 @@ class ImportedEvents extends ChangeNotifier {
     DateTime to,
   ) async {
     final generation = _accountGeneration;
+    if (provider == 'kbo') {
+      await _refreshKbo(generation, calendars, from, to);
+      return;
+    }
     if (provider == 'kakao' &&
         calendars.any((calendar) => calendar.id == 'all')) {
       calendars = await AuthService.instance.importCalendars(provider);
@@ -250,6 +255,55 @@ class ImportedEvents extends ChangeNotifier {
     if (generation != _accountGeneration) return;
     replaceProvider(provider, next);
   }
+
+  /// Fetches the whole KBO league schedule once and keeps a game exactly
+  /// once even when both its teams are subscribed, instead of fetching (and
+  /// duplicating) it once per subscribed team.
+  Future<void> _refreshKbo(
+    int generation,
+    List<ImportCalendar> calendars,
+    DateTime from,
+    DateTime to,
+  ) async {
+    final games = await KboScheduleService.fetchSchedule(from, to);
+    if (generation != _accountGeneration) return;
+    final colorByCode = {for (final c in calendars) c.id: c.color};
+    final next = <String, List<CalendarEvent>>{};
+    for (final game in games) {
+      final homeSubscribed = colorByCode.containsKey(game.homeCode);
+      final awaySubscribed = colorByCode.containsKey(game.awayCode);
+      if (!homeSubscribed && !awaySubscribed) continue;
+      final primaryCode = homeSubscribed ? game.homeCode : game.awayCode;
+      if (_excludedEvents.contains(
+        eventKey('kbo', primaryCode, game.gameId),
+      )) {
+        continue;
+      }
+      final event = CalendarEvent(
+        id: 'import:kbo:$primaryCode:${game.gameId}',
+        date: game.date,
+        title:
+            '${game.awayName} vs ${game.homeName}'
+            '${game.cancelled ? ' (취소)' : ''}',
+        time: game.time,
+        duration: _kboGameDurationMinutes,
+        color: colorByCode[primaryCode] ?? '#707078',
+        systemCalendarId: 'kbo|$primaryCode',
+        description: [
+          if (game.stadium != null && game.stadium!.isNotEmpty) game.stadium!,
+          if (game.homeScore != null && game.awayScore != null)
+            '${game.awayName} ${game.awayScore} : ${game.homeScore} ${game.homeName}',
+        ].join(' · '),
+      );
+      (next[event.date] ??= []).add(event);
+    }
+    if (generation != _accountGeneration) return;
+    _sources['kbo'] = calendars;
+    await _persistSources();
+    if (generation != _accountGeneration) return;
+    replaceProvider('kbo', next);
+  }
 }
 
 const _kakaoYellow = '#F5D76E';
+const _kboGameDurationMinutes = 210;

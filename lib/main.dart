@@ -37,6 +37,7 @@ import 'screens/time_grid_view.dart';
 import 'services/auth_service.dart';
 import 'services/app_update_service.dart';
 import 'services/backup_service.dart';
+import 'services/kbo_schedule.dart';
 import 'storage/event_store.dart';
 import 'storage/display_settings.dart';
 import 'storage/account_preferences.dart';
@@ -462,6 +463,7 @@ class _CalendarHomeState extends State<CalendarHome>
     'apple' => 'Apple 캘린더',
     'naver' => '네이버 캘린더',
     'notion' => 'Notion',
+    'kbo' => 'KBO 야구',
     _ => provider,
   };
 
@@ -1319,6 +1321,19 @@ class _CalendarHomeState extends State<CalendarHome>
             ),
           );
         }
+        return;
+      }
+      if (provider == 'kbo') {
+        final (from, to) = _range;
+        await importedEvents.refresh(
+          provider,
+          [
+            for (final team in kboTeams)
+              ImportCalendar(id: team.code, title: team.name, color: team.color),
+          ],
+          date_utils.parseDateKey(from),
+          date_utils.parseDateKey(to),
+        );
         return;
       }
       final url = await AuthService.instance.calendarImportStart(provider);
@@ -3043,6 +3058,12 @@ class _CalendarConnectionsSheet extends StatelessWidget {
                 'Notion',
                 CupertinoIcons.doc_text,
                 '날짜 속성이 있는 데이터베이스 선택',
+              ),
+              _ConnectionInfo(
+                'kbo',
+                'KBO 야구',
+                CupertinoIcons.sportscourt,
+                'KIA·NC·KT·롯데·삼성·키움·LG·두산·한화 경기 일정',
               ),
             ]),
             if (imports.sources.isNotEmpty) ...[

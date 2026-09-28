@@ -26,6 +26,7 @@ class ImportedCalendarGroup extends StatelessWidget {
     'apple' => 'Apple 캘린더',
     'naver' => '네이버 캘린더',
     'notion' => 'Notion',
+    'kbo' => 'KBO 야구',
     _ => provider,
   };
 
