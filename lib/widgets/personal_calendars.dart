@@ -128,11 +128,12 @@ class _CalendarEditorState extends State<_CalendarEditor> {
       );
       if (mounted) Navigator.pop(context);
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _saving = false;
           _error = '저장하지 못했습니다. 다시 시도해 주세요.';
         });
+      }
     }
   }
 

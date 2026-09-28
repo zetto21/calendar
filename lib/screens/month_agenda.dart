@@ -82,8 +82,9 @@ class _MonthAgendaState extends State<MonthAgenda> {
 
   void _onPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent ||
-        event.scrollDelta.dx.abs() <= event.scrollDelta.dy.abs())
+        event.scrollDelta.dx.abs() <= event.scrollDelta.dy.abs()) {
       return;
+    }
     GestureBinding.instance.pointerSignalResolver.register(event, (_) {
       _scrollIdle?.cancel();
       _scrollIdle = Timer(const Duration(milliseconds: 180), () {
@@ -135,7 +136,7 @@ class _MonthAgendaState extends State<MonthAgenda> {
                     child: ExcludeSemantics(child: outgoing),
                   ),
                 ),
-              if (current != null) current,
+              ?current,
             ],
           ),
           transitionBuilder: (child, animation) {
