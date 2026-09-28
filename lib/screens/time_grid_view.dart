@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
 
 import '../logic/date_utils.dart' as date_utils;
+import '../logic/time_event_layout.dart';
 import '../models/calendar_event.dart';
 import '../theme/app_theme.dart';
 
@@ -445,7 +446,9 @@ class _TimeGridViewState extends State<TimeGridView>
               for (final d in days)
                 SizedBox(
                   width: colWidth,
-                  child: Column(
+                  height: 30,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
                         date_utils.weekdays[d.weekday % 7],
@@ -454,21 +457,22 @@ class _TimeGridViewState extends State<TimeGridView>
                           color: view.theme.textMuted,
                         ),
                       ),
+                      const SizedBox(width: 3),
                       Container(
-                        width: 28,
-                        height: 28,
+                        width: 20,
+                        height: 20,
                         margin: const EdgeInsets.symmetric(vertical: 2),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
+                          borderRadius: BorderRadius.circular(4),
                           color: date_utils.isSameDay(d, _now)
-                              ? view.theme.accent
+                              ? view.theme.danger
                               : null,
                         ),
                         child: Text(
                           '${d.day}',
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: 12,
                             color: date_utils.isSameDay(d, _now)
                                 ? Colors.white
                                 : view.theme.text,
@@ -628,10 +632,13 @@ class _AllDayChip extends StatelessWidget {
       child: Container(
         width: double.infinity,
         margin: const EdgeInsets.only(bottom: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
         decoration: BoxDecoration(
-          color: tone.background,
+          color: Color.alphaBlend(tone.background, theme.bg),
           borderRadius: BorderRadius.circular(3),
+          border: Border(
+            left: BorderSide(color: colorFromHex(event.color), width: 3),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -642,7 +649,7 @@ class _AllDayChip extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 11,
                 fontWeight: FontWeight.w500,
                 color: tone.title,
               ),
@@ -652,7 +659,7 @@ class _AllDayChip extends StatelessWidget {
                 event.location!,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: tone.detail),
+                style: TextStyle(fontSize: 10, color: tone.detail),
               ),
           ],
         ),
@@ -703,49 +710,7 @@ class _DayColumnState extends State<_DayColumn> {
   int? _dropMinute; // snapped start of an event being dragged over this day
   int _dropDuration = 60;
 
-  // Keep time blocks at their real positions; stack readable labels above them.
-  Map<String, ({double top, double height})> _titleLayout(
-    List<CalendarEvent> events,
-  ) {
-    final result = <String, ({double top, double height})>{};
-    var nextTop = 0.0;
-    for (final event in events) {
-      double measure(String text, TextStyle style) {
-        final painter = TextPainter(
-          text: TextSpan(
-            text: text,
-            style: DefaultTextStyle.of(context).style.merge(style),
-          ),
-          textDirection: Directionality.of(context),
-          textScaler: MediaQuery.textScalerOf(context),
-        )..layout(maxWidth: (widget.width - 34).clamp(1, double.infinity));
-        final height = painter.height;
-        painter.dispose();
-        return height;
-      }
-
-      final height =
-          measure(
-            event.title,
-            const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              height: 1.25,
-            ),
-          ) +
-          measure(
-            _eventTimeLabel(event),
-            const TextStyle(fontSize: 10, height: 1.4),
-          ) +
-          8;
-      final actualTop =
-          date_utils.minutesFromTime(event.time!) / 60 * _hourHeight;
-      final top = actualTop > nextTop ? actualTop : nextTop;
-      result[event.id] = (top: top, height: height);
-      nextTop = top + height + 3;
-    }
-    return result;
-  }
+  String? _hoveredId;
 
   int _minuteAt(double y) =>
       (((y / _hourHeight * 60) / 15).round() * 15).clamp(0, 24 * 60);
@@ -772,67 +737,6 @@ class _DayColumnState extends State<_DayColumn> {
     return date_utils.timeFromMinutes(minutes.clamp(0, 24 * 60 - 15));
   }
 
-  String _eventTimeLabel(CalendarEvent event) =>
-      '${event.time}–${date_utils.timeFromMinutes(date_utils.minutesFromTime(event.time!) + event.duration)}';
-
-  Widget _stackedTitle(CalendarEvent event, double labelTop) {
-    final tone = eventCardTone(colorFromHex(event.color), widget.theme);
-    final label = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(tone.background, widget.theme.bg),
-        border: Border(
-          left: BorderSide(color: colorFromHex(event.color), width: 2),
-        ),
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            event.title,
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.25,
-              fontWeight: FontWeight.w500,
-              color: tone.title,
-            ),
-          ),
-          Text(
-            _eventTimeLabel(event),
-            style: TextStyle(fontSize: 10, height: 1.4, color: tone.detail),
-          ),
-        ],
-      ),
-    );
-    Widget content = InkWell(
-      onTap: () => widget.onEventPress(event),
-      child: label,
-    );
-    if (widget.onEventMove != null && isMovableEvent(event)) {
-      final actualTop =
-          date_utils.minutesFromTime(event.time!) / 60 * _hourHeight;
-      content = Draggable<CalendarEvent>(
-        data: event,
-        dragAnchorStrategy: (draggable, context, position) {
-          final box = context.findRenderObject()! as RenderBox;
-          return box.globalToLocal(position) + Offset(6, labelTop - actualTop);
-        },
-        feedback: Material(
-          color: Colors.transparent,
-          child: SizedBox(width: widget.width - 20, child: label),
-        ),
-        childWhenDragging: Opacity(opacity: 0.35, child: content),
-        child: content,
-      );
-    }
-    return MouseRegion(
-      onEnter: (_) => widget.onEventHover?.call(event),
-      onExit: (_) => widget.onEventHover?.call(null),
-      child: content,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
@@ -845,11 +749,19 @@ class _DayColumnState extends State<_DayColumn> {
           ..sort((a, b) {
             final byTime = a.time!.compareTo(b.time!);
             if (byTime != 0) return byTime;
-            return a.id.compareTo(b.id);
+            final duration = b.duration.compareTo(a.duration);
+            return duration != 0 ? duration : a.id.compareTo(b.id);
           });
     final isToday = date_utils.isSameDay(day, widget.now);
     final nowMinutes = widget.now.hour * 60 + widget.now.minute;
-    final titles = _titleLayout(timedEvents);
+    final placements = layoutTimeEvents(timedEvents);
+    final paintOrder = [...timedEvents]
+      ..sort((a, b) {
+        if (a.id == _hoveredId) return 1;
+        if (b.id == _hoveredId) return -1;
+        final left = placements[a.id]!.left.compareTo(placements[b.id]!.left);
+        return left != 0 ? left : a.time!.compareTo(b.time!);
+      });
 
     return DragTarget<CalendarEvent>(
       onWillAcceptWithDetails: (details) => widget.onEventMove != null,
@@ -872,12 +784,6 @@ class _DayColumnState extends State<_DayColumn> {
       builder: (context, candidates, _) => SizedBox(
         key: _columnKey,
         width: widget.width,
-        height: titles.values.fold<double>(
-          24 * _hourHeight,
-          (height, title) => title.top + title.height > height
-              ? title.top + title.height
-              : height,
-        ),
         child: Stack(
           children: [
             GestureDetector(
@@ -914,6 +820,7 @@ class _DayColumnState extends State<_DayColumn> {
                                     : null),
                           border: Border(
                             top: BorderSide(color: theme.border, width: 0.5),
+                            left: BorderSide(color: theme.border, width: 0.5),
                           ),
                         ),
                       ),
@@ -972,29 +879,28 @@ class _DayColumnState extends State<_DayColumn> {
                   ),
                 ),
               ),
-            for (final e in timedEvents)
+            for (final e in paintOrder)
               _EventBlock(
                 key: ValueKey(e.id),
                 theme: theme,
                 event: e,
-                left: 2,
-                width: widget.width - 14,
+                left: 2 + placements[e.id]!.left * (widget.width - 6),
+                width: placements[e.id]!.width * (widget.width - 6) - 2,
                 onTap: () => widget.onEventPress(e),
                 movable: widget.onEventMove != null && isMovableEvent(e),
                 onResize: widget.onEventResize == null
                     ? null
                     : (time, duration) =>
                           widget.onEventResize!(e, time, duration),
-                onHover: widget.onEventHover,
-              ),
-            for (final event in timedEvents)
-              Positioned(
-                key: ValueKey('event-title:${event.id}'),
-                top: titles[event.id]!.top,
-                left: 8,
-                width: widget.width - 20,
-                height: titles[event.id]!.height,
-                child: _stackedTitle(event, titles[event.id]!.top),
+                onHover: (event) {
+                  if (event != null && _hoveredId != event.id) {
+                    setState(() => _hoveredId = event.id);
+                  }
+                  if (event == null && _hoveredId == e.id) {
+                    setState(() => _hoveredId = null);
+                  }
+                  widget.onEventHover?.call(event);
+                },
               ),
             if (isToday)
               Positioned(
@@ -1057,50 +963,62 @@ class _EventBlockState extends State<_EventBlock> {
     final (start, duration) = _range;
     return Container(
       width: width,
+      margin: const EdgeInsets.only(bottom: 1),
       padding: EdgeInsets.symmetric(
-        horizontal: 6,
-        vertical: height < 30 ? 2 : 6,
+        horizontal: 4,
+        vertical: height < 30 ? 0 : 3,
       ),
       decoration: BoxDecoration(
-        color: tone.background,
+        color: Color.alphaBlend(tone.background, widget.theme.bg),
         borderRadius: BorderRadius.circular(3),
         border: _resizing
             ? Border.all(color: widget.theme.accent, width: 1.5)
-            : null,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (width != null || _resizing)
-            Text(
-              event.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: tone.title,
+            : Border(
+                left: BorderSide(color: colorFromHex(event.color), width: 3),
               ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final scaler = MediaQuery.textScalerOf(context);
+          final titleLine = scaler.scale(14);
+          final timeLine = scaler.scale(12);
+          final showTime = constraints.maxHeight >= titleLine + timeLine;
+          final titleLines =
+              ((constraints.maxHeight - (showTime ? timeLine : 0)) / titleLine)
+                  .floor()
+                  .clamp(1, 100);
+          return ClipRect(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: Text(
+                    event.title,
+                    maxLines: titleLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 14 / 11,
+                      fontWeight: FontWeight.w500,
+                      color: tone.title,
+                    ),
+                  ),
+                ),
+                if (showTime)
+                  Text(
+                    '${date_utils.timeFromMinutes(start)}–${date_utils.timeFromMinutes(start + duration)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.2,
+                      color: tone.detail,
+                    ),
+                  ),
+              ],
             ),
-          if (_resizing && height > 34)
-            Text(
-              '${date_utils.formatTimeLabel(date_utils.timeFromMinutes(start))} · ${date_utils.formatDurationLabel(duration)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: tone.detail),
-            )
-          else if (width != null &&
-              height > 38 &&
-              event.location != null &&
-              event.location!.isNotEmpty)
-            Text(
-              event.location!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: tone.detail),
-            ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1141,14 +1059,17 @@ class _EventBlockState extends State<_EventBlock> {
     final (start, duration) = _range;
     final top = (start / 60) * _hourHeight;
     final height = ((duration / 60) * _hourHeight)
-        .clamp(22, double.infinity)
+        .clamp(2, double.infinity)
         .toDouble();
-    Widget content = InkWell(onTap: widget.onTap, child: _body(height));
+    Widget content = Tooltip(
+      message:
+          '${event.title}\n${event.time}–${date_utils.timeFromMinutes(start + duration)}',
+      child: InkWell(onTap: widget.onTap, child: _body(height)),
+    );
     if (widget.movable) {
       content = MouseRegion(
         cursor: SystemMouseCursors.grab,
-        onEnter: (_) => widget.onHover?.call(event),
-        onExit: (_) => widget.onHover?.call(null),
+
         child: Draggable<CalendarEvent>(
           data: event,
           feedback: Material(
@@ -1174,8 +1095,14 @@ class _EventBlockState extends State<_EventBlock> {
       height: height,
       child: Stack(
         children: [
-          Positioned.fill(child: content),
-          if (widget.movable && widget.onResize != null) ...[
+          Positioned.fill(
+            child: MouseRegion(
+              onEnter: (_) => widget.onHover?.call(event),
+              onExit: (_) => widget.onHover?.call(null),
+              child: content,
+            ),
+          ),
+          if (widget.movable && widget.onResize != null && height >= 28) ...[
             _handle(top: true),
             _handle(top: false),
           ],

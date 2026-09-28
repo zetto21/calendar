@@ -1,13 +1,14 @@
 import 'package:calendar_app_flutter/models/calendar_event.dart';
 import 'package:calendar_app_flutter/screens/time_grid_view.dart';
 import 'package:calendar_app_flutter/theme/app_theme.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   for (final dayCount in [1, 7]) {
     testWidgets(
-      '$dayCount days: overlapping events retain full readable titles',
+      '$dayCount days: staggered overlap keeps exact times and each card accessible',
       (tester) async {
         final events = List.generate(
           4,
@@ -38,24 +39,40 @@ void main() {
         final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
         scroll.position.jumpTo(9 * 56);
         await tester.pump();
-        Rect? previous;
+        final first = tester.getRect(find.byKey(ValueKey(events.first.id)));
+        final rects = <Rect>[];
         for (final event in events) {
-          final title = find.text(event.title);
-          expect(title, findsOneWidget);
-          final text = tester.widget<Text>(title);
-          expect(text.maxLines, isNull);
-          expect(text.overflow, isNull);
-          final rect = tester.getRect(
-            find.byKey(ValueKey('event-title:${event.id}')),
+          final rect = tester.getRect(find.byKey(ValueKey(event.id)));
+          expect(rect.top, first.top);
+          expect(rect.height, closeTo(event.duration / 60 * 56, 0.01));
+          rects.add(rect);
+          final tooltip = tester.widget<Tooltip>(
+            find.descendant(
+              of: find.byKey(ValueKey(event.id)),
+              matching: find.byType(Tooltip),
+            ),
           );
-          expect(rect.width, greaterThan((800 - 42) / dayCount * 0.8));
-          if (previous != null) {
-            expect(rect.top, greaterThanOrEqualTo(previous.bottom));
-          }
-          previous = rect;
+          expect(tooltip.message, contains(event.title));
         }
-        await tester.tap(find.text(events.first.title));
-        expect(selected?.id, events.first.id);
+        rects.sort((a, b) => a.left.compareTo(b.left));
+        for (var i = 1; i < rects.length; i++) {
+          expect(rects[i].left, greaterThan(rects[i - 1].left));
+          expect(rects[i].overlaps(rects[i - 1]), isTrue);
+        }
+        expect(find.byType(PopupMenuButton<CalendarEvent>), findsNothing);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: Offset.zero);
+        for (final event in events.reversed) {
+          await mouse.moveTo(Offset.zero);
+          await tester.pump();
+          final rect = tester.getRect(find.byKey(ValueKey(event.id)));
+          final exposed = rect.topLeft + const Offset(3, 5);
+          await mouse.moveTo(exposed);
+          await tester.pump();
+          await tester.tapAt(exposed);
+          expect(selected?.id, event.id);
+        }
+        await mouse.removePointer();
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
       },
