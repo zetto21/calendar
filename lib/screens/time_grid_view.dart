@@ -521,61 +521,71 @@ class _TimeGridViewState extends State<TimeGridView>
             ),
           ),
         Expanded(
-          child: SingleChildScrollView(
-            controller: controller,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 88),
-              child: _dateRow(
-                colWidth,
-                continuous: continuous,
-                children: [
-                  SizedBox(
-                    width: _labelWidth,
-                    child: Column(
-                      children: [
-                        for (final h in date_utils.hoursOfDay)
-                          SizedBox(
-                            height: _hourHeight,
-                            child: h == 0
-                                ? null
-                                : Align(
-                                    alignment: Alignment.topRight,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(right: 4),
-                                      child: Text(
-                                        date_utils.formatHourLabel(h),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: view.theme.textMuted,
+          child: ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: {
+                ...ScrollConfiguration.of(context).dragDevices,
+                PointerDeviceKind.mouse,
+              },
+            ),
+            child: SingleChildScrollView(
+              controller: controller,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 88),
+                child: _dateRow(
+                  colWidth,
+                  continuous: continuous,
+                  children: [
+                    SizedBox(
+                      width: _labelWidth,
+                      child: Column(
+                        children: [
+                          for (final h in date_utils.hoursOfDay)
+                            SizedBox(
+                              height: _hourHeight,
+                              child: h == 0
+                                  ? null
+                                  : Align(
+                                      alignment: Alignment.topRight,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 4,
+                                        ),
+                                        child: Text(
+                                          date_utils.formatHourLabel(h),
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: view.theme.textMuted,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                          ),
-                      ],
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  for (final d in days)
-                    _DayColumn(
-                      key: ValueKey(date_utils.toDateKey(d)),
-                      theme: view.theme,
-                      day: d,
-                      width: colWidth,
-                      now: _now,
-                      events: view.events,
-                      onSlotPress: view.onSlotPress,
-                      onEventPress: view.onEventPress,
-                      onEventMove: view.onEventMove,
-                      onEventResize: view.onEventResize,
-                      onRangeCreate: view.onRangeCreate,
-                      onEventHover: view.onEventHover,
-                      selectedHour:
-                          view.selectedDate != null &&
-                              date_utils.isSameDay(d, view.selectedDate!)
-                          ? view.selectedHour
-                          : null,
-                    ),
-                ],
+                    for (final d in days)
+                      _DayColumn(
+                        key: ValueKey(date_utils.toDateKey(d)),
+                        theme: view.theme,
+                        day: d,
+                        width: colWidth,
+                        now: _now,
+                        events: view.events,
+                        onSlotPress: view.onSlotPress,
+                        onEventPress: view.onEventPress,
+                        onEventMove: view.onEventMove,
+                        onEventResize: view.onEventResize,
+                        onRangeCreate: view.onRangeCreate,
+                        onEventHover: view.onEventHover,
+                        selectedHour:
+                            view.selectedDate != null &&
+                                date_utils.isSameDay(d, view.selectedDate!)
+                            ? view.selectedHour
+                            : null,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -782,21 +792,21 @@ class _DayColumnState extends State<_DayColumn> {
           children: [
             GestureDetector(
               behavior: HitTestBehavior.translucent,
-              onVerticalDragStart: widget.onRangeCreate == null
+              onLongPressStart: widget.onRangeCreate == null
                   ? null
                   : (d) => setState(() {
                       _createFrom = _minuteAt(d.localPosition.dy);
                       _createTo = _createFrom;
                     }),
-              onVerticalDragUpdate: widget.onRangeCreate == null
+              onLongPressMoveUpdate: widget.onRangeCreate == null
                   ? null
                   : (d) => setState(
                       () => _createTo = _minuteAt(d.localPosition.dy),
                     ),
-              onVerticalDragEnd: widget.onRangeCreate == null
+              onLongPressEnd: widget.onRangeCreate == null
                   ? null
                   : (_) => _finishCreate(),
-              onVerticalDragCancel: widget.onRangeCreate == null
+              onLongPressCancel: widget.onRangeCreate == null
                   ? null
                   : () => setState(() => _createFrom = _createTo = null),
               child: Column(
