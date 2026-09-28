@@ -35,6 +35,7 @@ class MacosCalendarShell extends StatelessWidget {
     this.onActivate,
     this.onNudge,
     this.onDuplicate,
+    this.onRefresh,
     this.eventEditorOpen = false,
   });
   final AppTheme theme;
@@ -42,7 +43,13 @@ class MacosCalendarShell extends StatelessWidget {
   final ViewMode view;
   final ValueChanged<ViewMode> onViewChanged;
   final VoidCallback onPrevious, onNext, onToday, onCreate, onSearch, onManage;
-  final VoidCallback? onConnect, onSettings, onActivate, onDuplicate, onPalette;
+  final VoidCallback?
+  onConnect,
+  onSettings,
+  onActivate,
+  onDuplicate,
+  onPalette,
+  onRefresh;
   final bool eventEditorOpen;
   final void Function(int dx, int dy)? onNavigate;
   final void Function(int days, int minutes)? onNudge;
@@ -550,6 +557,8 @@ class MacosCalendarShell extends StatelessWidget {
             },
             const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
                 onSearch,
+            const SingleActivator(LogicalKeyboardKey.keyR, meta: true):
+                ?_unlessTypingOrNull(onRefresh),
             const SingleActivator(LogicalKeyboardKey.keyT, meta: true): onToday,
             const SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true):
                 onPrevious,

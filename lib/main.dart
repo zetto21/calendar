@@ -1233,6 +1233,12 @@ class _CalendarHomeState extends State<CalendarHome>
     }
   }
 
+  Future<void> _refreshAll() async {
+    await _runSync();
+    await _refreshImported();
+    _refreshHolidays();
+  }
+
   EventMap _combineEvents(EventMap local, EventMap imported) {
     return mergeAndDeduplicateEvents(
       local,
@@ -2392,6 +2398,7 @@ class _CalendarHomeState extends State<CalendarHome>
                 onActivate: _activateSelection,
                 onNudge: _nudgeHovered,
                 onDuplicate: _duplicateHovered,
+                onRefresh: _refreshAll,
                 onManage: () => _scaffoldKey.currentState?.openDrawer(),
                 onSearch: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
