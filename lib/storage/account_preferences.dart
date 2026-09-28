@@ -17,6 +17,7 @@ class AccountPreferences {
   final Future<void> Function(String, Map<String, dynamic>) _saveRemote;
   static final instance = AccountPreferences();
   static const keys = [
+    'calendar.personal.lists.v1',
     'calendar.display.holidays',
     'calendar.display.lunar',
     'calendar.display.solarTerms',

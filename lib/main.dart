@@ -1,6 +1,8 @@
 import 'services/desktop_notifications.dart';
 
 import 'dart:async';
+import 'dart:convert';
+import 'widgets/personal_calendars.dart';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -247,6 +249,40 @@ class _CalendarHomeState extends State<CalendarHome>
   Widget? _eventSidePanel;
   ViewMode _view = ViewMode.month;
   bool _showPersonalCalendar = true;
+  List<PersonalCalendar> _personalCalendars = [PersonalCalendar.initial];
+  static const _personalCalendarsKey = 'calendar.personal.lists.v1';
+
+  Future<void> _loadPersonalCalendars() async {
+    final raw = await AccountPreferences.instance.get(_personalCalendarsKey);
+    if (!mounted || raw is! String) return;
+    final calendars = (jsonDecode(raw) as List)
+        .map((item) => PersonalCalendar.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+    if (!calendars.any((calendar) => calendar.id == 'personal')) {
+      calendars.insert(0, PersonalCalendar.initial);
+    }
+    setState(() => _personalCalendars = calendars);
+  }
+
+  Future<void> _savePersonalCalendar(PersonalCalendar calendar) async {
+    final calendars = [..._personalCalendars];
+    final index = calendars.indexWhere((item) => item.id == calendar.id);
+    if (index < 0) {
+      calendars.add(calendar);
+    } else {
+      calendars[index] = calendar;
+    }
+    await AccountPreferences.instance.set(_personalCalendarsKey,
+        jsonEncode(calendars.map((item) => item.toJson()).toList()));
+    if (mounted) setState(() => _personalCalendars = calendars);
+  }
+
+  Widget _personalCalendarControls() => PersonalCalendars(
+    calendars: _personalCalendars,
+    onSave: _savePersonalCalendar,
+    personalVisible: _showPersonalCalendar,
+    onPersonalVisibilityChanged: (value) => setState(() => _showPersonalCalendar = value),
+  );
   DateTime _anchorDate = DateTime.now();
   DateTime? _rollingWeekStart;
   List<DateTime> get _visibleWeekDays => List.generate(
@@ -306,6 +342,7 @@ class _CalendarHomeState extends State<CalendarHome>
     WidgetsBinding.instance.addObserver(this);
     _eventStore = context.read<EventStore>();
     _sync = SystemEventsSync(_eventStore);
+    unawaited(_loadPersonalCalendars());
     _eventStore.syncSucceeded.addListener(_showEventSyncStatus);
     _eventSyncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
@@ -392,7 +429,7 @@ class _CalendarHomeState extends State<CalendarHome>
     if (!LiveActivity.isMacOS) return;
     final items = <Map<String, Object>>[
       {'id': 'section:calendars', 'title': '캘린더', 'header': true},
-      {'id': 'personal', 'title': '내 캘린더', 'visible': _showPersonalCalendar},
+      {'id': 'personal', 'title': _personalCalendars.firstWhere((calendar) => calendar.id == 'personal').title, 'visible': _showPersonalCalendar},
       for (final source in imported.sources.entries)
         for (final calendar in source.value)
           {
@@ -509,6 +546,7 @@ class _CalendarHomeState extends State<CalendarHome>
     final imports = context.read<ImportedEvents>();
     if (!await AccountPreferences.instance.sync() || !mounted) return;
     await DisplaySettings.instance.load();
+    await _loadPersonalCalendars();
     await imports.load();
     if (!mounted) return;
     setState(() {
@@ -2209,7 +2247,7 @@ class _CalendarHomeState extends State<CalendarHome>
     final (from, to) = _range;
     final expanded = expandEvents(
       _combineEvents(
-        useDesktopLayout && !_showPersonalCalendar ? const {} : store.events,
+        !_showPersonalCalendar ? const {} : store.events,
         imported.events,
       ),
       from,
@@ -2225,6 +2263,7 @@ class _CalendarHomeState extends State<CalendarHome>
       drawerScrimColor: Colors.black.withValues(alpha: 0.56),
 
       drawer: _AccountDrawer(
+        personalCalendars: _personalCalendarControls(),
         theme: theme,
         user: widget.user,
         showHolidays: _showHolidays,
@@ -2279,17 +2318,7 @@ class _CalendarHomeState extends State<CalendarHome>
                 onConnect: _showCalendarConnections,
                 onSettings: _openSettings,
                 eventEditorOpen: _eventSidePanel != null,
-                calendarControls: [
-                  CheckboxListTile(
-                    dense: true,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    activeColor: theme.accent,
-                    title: const Text('내 캘린더', style: TextStyle(fontSize: 13)),
-                    value: _showPersonalCalendar,
-                    onChanged: (value) =>
-                        setState(() => _showPersonalCalendar = value!),
-                  ),
-                ],
+                calendarControls: [_personalCalendarControls()],
                 importedControls: [
                   for (final source in imported.sources.entries)
                     ImportedCalendarGroup(
@@ -2722,6 +2751,7 @@ class _CalendarImportChoice extends StatelessWidget {
 }
 
 class _AccountDrawer extends StatelessWidget {
+  final Widget personalCalendars;
   final AppTheme theme;
   final AuthUser? user;
   final bool showHolidays;
@@ -2736,6 +2766,7 @@ class _AccountDrawer extends StatelessWidget {
   final VoidCallback onManageCalendars;
   final VoidCallback onSettings;
   const _AccountDrawer({
+    required this.personalCalendars,
     required this.theme,
     required this.user,
     required this.showHolidays,
@@ -2763,8 +2794,7 @@ class _AccountDrawer extends StatelessWidget {
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: ListView(
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2821,6 +2851,7 @@ class _AccountDrawer extends StatelessWidget {
               const SizedBox(height: 20),
               _sectionTitle('내 캘린더'),
               const SizedBox(height: 6),
+              personalCalendars,
               if (imports.sources.isNotEmpty) ...[
                 for (final entry in imports.sources.entries)
                   ImportedCalendarGroup(
