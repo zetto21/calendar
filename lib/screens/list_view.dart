@@ -22,11 +22,14 @@ class EventListView extends StatelessWidget {
     final keys = events.keys.where((key) => events[key]!.isNotEmpty).toList()
       ..sort();
     if (keys.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
-        child: Text(
-          '일정이 없습니다',
-          style: TextStyle(color: theme.textMuted, fontSize: 13),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '일정이 없습니다',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: theme.textMuted, fontSize: 13),
+          ),
         ),
       );
     }

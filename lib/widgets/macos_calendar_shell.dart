@@ -449,10 +449,23 @@ class MacosCalendarShell extends StatelessWidget {
   static VoidCallback? _unlessTypingOrNull(VoidCallback? action) =>
       action == null ? null : _unlessTyping(action);
 
+  Map<ShortcutActivator, VoidCallback> get _navigationBindings => {
+    if (onNavigate != null) ...{
+      const _CalendarNavigationActivator(LogicalKeyboardKey.arrowLeft):
+          _unlessTyping(() => onNavigate!(-1, 0)),
+      const _CalendarNavigationActivator(LogicalKeyboardKey.arrowRight):
+          _unlessTyping(() => onNavigate!(1, 0)),
+      const _CalendarNavigationActivator(LogicalKeyboardKey.arrowUp):
+          _unlessTyping(() => onNavigate!(0, -1)),
+      const _CalendarNavigationActivator(LogicalKeyboardKey.arrowDown):
+          _unlessTyping(() => onNavigate!(0, 1)),
+    },
+  };
+
   @override
   Widget build(BuildContext context) => CallbackShortcuts(
     bindings: eventEditorOpen
-        ? const {}
+        ? _navigationBindings
         : {
             const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () =>
                 onViewChanged(ViewMode.month),
@@ -492,17 +505,7 @@ class MacosCalendarShell extends StatelessWidget {
             const SingleActivator(LogicalKeyboardKey.keyL): _unlessTyping(
               () => onViewChanged(ViewMode.list),
             ),
-            if (onNavigate != null) ...{
-              const SingleActivator(LogicalKeyboardKey.arrowLeft):
-                  _unlessTyping(() => onNavigate!(-1, 0)),
-              const SingleActivator(LogicalKeyboardKey.arrowRight):
-                  _unlessTyping(() => onNavigate!(1, 0)),
-              const SingleActivator(LogicalKeyboardKey.arrowUp): _unlessTyping(
-                () => onNavigate!(0, -1),
-              ),
-              const SingleActivator(LogicalKeyboardKey.arrowDown):
-                  _unlessTyping(() => onNavigate!(0, 1)),
-            },
+            ..._navigationBindings,
             const SingleActivator(LogicalKeyboardKey.enter):
                 ?_unlessTypingOrNull(onActivate),
             const SingleActivator(LogicalKeyboardKey.keyD, meta: true):
@@ -696,4 +699,13 @@ class _CalendarToggleState extends State<_CalendarToggle> {
             setState(() => value = next);
           },
   );
+}
+
+// Let text fields handle arrows through Flutter's text-editing shortcuts.
+class _CalendarNavigationActivator extends SingleActivator {
+  const _CalendarNavigationActivator(super.trigger);
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) =>
+      !MacosCalendarShell._isEditingText() && super.accepts(event, state);
 }
