@@ -20,6 +20,7 @@ class TimeGridView extends StatefulWidget {
   final AppTheme theme;
   final List<DateTime> days;
   final EventMap events;
+  final Map<String, List<String>> anniversaryNames;
   final void Function(DateTime date, int hour) onSlotPress;
   final ValueChanged<CalendarEvent> onEventPress;
   final void Function(CalendarEvent event, DateTime date, String? time)?
@@ -40,6 +41,7 @@ class TimeGridView extends StatefulWidget {
     required this.theme,
     required this.days,
     required this.events,
+    this.anniversaryNames = const {},
     required this.onSlotPress,
     required this.onEventPress,
     this.onEventMove,
@@ -413,10 +415,21 @@ class _TimeGridViewState extends State<TimeGridView>
         : view.days;
     final allDayByDate = days
         .map(
-          (d) =>
-              (view.events[date_utils.toDateKey(d)] ?? const <CalendarEvent>[])
-                  .where((e) => e.time == null)
-                  .toList(),
+          (d) => [
+            for (final name
+                in view.anniversaryNames[date_utils.toDateKey(d)] ??
+                    const <String>[])
+              CalendarEvent(
+                id: 'anniversary:${date_utils.toDateKey(d)}:$name',
+                date: date_utils.toDateKey(d),
+                title: name,
+                description: '법정 기념일',
+                duration: 1440,
+                color: '#707078',
+              ),
+            ...(view.events[date_utils.toDateKey(d)] ?? const <CalendarEvent>[])
+                .where((e) => e.time == null),
+          ],
         )
         .toList();
     final hasAllDay = allDayByDate.any((list) => list.isNotEmpty);
@@ -467,7 +480,7 @@ class _TimeGridViewState extends State<TimeGridView>
                 ),
             ],
           ),
-        if (hasAllDay)
+        if (!view.embedded || hasAllDay)
           Container(
             decoration: BoxDecoration(
               border: Border.symmetric(
@@ -481,6 +494,7 @@ class _TimeGridViewState extends State<TimeGridView>
               children: [
                 Container(
                   width: _labelWidth,
+                  constraints: const BoxConstraints(minHeight: 34),
                   alignment: Alignment.center,
                   color: view.theme.bgSecondary,
                   child: Text(
@@ -502,6 +516,7 @@ class _TimeGridViewState extends State<TimeGridView>
                         view.onEventMove!(details.data, days[i], null),
                     builder: (context, candidates, _) => Container(
                       width: colWidth,
+                      constraints: const BoxConstraints(minHeight: 34),
                       color: candidates.isNotEmpty
                           ? view.theme.accent.withValues(alpha: 0.12)
                           : null,

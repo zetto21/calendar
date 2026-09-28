@@ -2574,6 +2574,7 @@ class _CalendarHomeState extends State<CalendarHome>
           theme: theme,
           days: _visibleWeekDays,
           events: expanded,
+          anniversaryNames: _showAnniversaries ? _apiAnniversaries : const {},
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onEventPress: _openEdit,
@@ -2597,6 +2598,7 @@ class _CalendarHomeState extends State<CalendarHome>
           theme: theme,
           days: [_anchorDate],
           events: expanded,
+          anniversaryNames: _showAnniversaries ? _apiAnniversaries : const {},
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onEventPress: _openEdit,
