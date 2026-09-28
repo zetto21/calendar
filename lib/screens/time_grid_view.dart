@@ -703,45 +703,47 @@ class _DayColumnState extends State<_DayColumn> {
   int? _dropMinute; // snapped start of an event being dragged over this day
   int _dropDuration = 60;
 
-  /// Notion-style lanes: overlapping events sit side by side.
-  Map<String, (int lane, int lanes)> _layout(List<CalendarEvent> events) {
-    final sorted = [...events]
-      ..sort(
-        (a, b) => date_utils
-            .minutesFromTime(a.time!)
-            .compareTo(date_utils.minutesFromTime(b.time!)),
-      );
-    final result = <String, (int, int)>{};
-    var cluster = <CalendarEvent>[];
-    var clusterEnd = 0;
-    void flush() {
-      if (cluster.isEmpty) return;
-      final laneEnds = <int>[];
-      final lanes = <String, int>{};
-      for (final e in cluster) {
-        final start = date_utils.minutesFromTime(e.time!);
-        var lane = laneEnds.indexWhere((end) => end <= start);
-        if (lane == -1) {
-          lane = laneEnds.length;
-          laneEnds.add(0);
-        }
-        laneEnds[lane] = start + (e.duration < 30 ? 30 : e.duration);
-        lanes[e.id] = lane;
+  // Keep time blocks at their real positions; stack readable labels above them.
+  Map<String, ({double top, double height})> _titleLayout(
+    List<CalendarEvent> events,
+  ) {
+    final result = <String, ({double top, double height})>{};
+    var nextTop = 0.0;
+    for (final event in events) {
+      double measure(String text, TextStyle style) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: text,
+            style: DefaultTextStyle.of(context).style.merge(style),
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: (widget.width - 34).clamp(1, double.infinity));
+        final height = painter.height;
+        painter.dispose();
+        return height;
       }
-      for (final e in cluster) {
-        result[e.id] = (lanes[e.id]!, laneEnds.length);
-      }
-      cluster = [];
-    }
 
-    for (final e in sorted) {
-      final start = date_utils.minutesFromTime(e.time!);
-      if (cluster.isNotEmpty && start >= clusterEnd) flush();
-      cluster.add(e);
-      final end = start + (e.duration < 30 ? 30 : e.duration);
-      if (cluster.length == 1 || end > clusterEnd) clusterEnd = end;
+      final height =
+          measure(
+            event.title,
+            const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1.25,
+            ),
+          ) +
+          measure(
+            _eventTimeLabel(event),
+            const TextStyle(fontSize: 10, height: 1.4),
+          ) +
+          8;
+      final actualTop =
+          date_utils.minutesFromTime(event.time!) / 60 * _hourHeight;
+      final top = actualTop > nextTop ? actualTop : nextTop;
+      result[event.id] = (top: top, height: height);
+      nextTop = top + height + 3;
     }
-    flush();
     return result;
   }
 
@@ -770,17 +772,84 @@ class _DayColumnState extends State<_DayColumn> {
     return date_utils.timeFromMinutes(minutes.clamp(0, 24 * 60 - 15));
   }
 
+  String _eventTimeLabel(CalendarEvent event) =>
+      '${event.time}–${date_utils.timeFromMinutes(date_utils.minutesFromTime(event.time!) + event.duration)}';
+
+  Widget _stackedTitle(CalendarEvent event, double labelTop) {
+    final tone = eventCardTone(colorFromHex(event.color), widget.theme);
+    final label = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(tone.background, widget.theme.bg),
+        border: Border(
+          left: BorderSide(color: colorFromHex(event.color), width: 2),
+        ),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            event.title,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.25,
+              fontWeight: FontWeight.w500,
+              color: tone.title,
+            ),
+          ),
+          Text(
+            _eventTimeLabel(event),
+            style: TextStyle(fontSize: 10, height: 1.4, color: tone.detail),
+          ),
+        ],
+      ),
+    );
+    Widget content = InkWell(
+      onTap: () => widget.onEventPress(event),
+      child: label,
+    );
+    if (widget.onEventMove != null && isMovableEvent(event)) {
+      final actualTop =
+          date_utils.minutesFromTime(event.time!) / 60 * _hourHeight;
+      content = Draggable<CalendarEvent>(
+        data: event,
+        dragAnchorStrategy: (draggable, context, position) {
+          final box = context.findRenderObject()! as RenderBox;
+          return box.globalToLocal(position) + Offset(6, labelTop - actualTop);
+        },
+        feedback: Material(
+          color: Colors.transparent,
+          child: SizedBox(width: widget.width - 20, child: label),
+        ),
+        childWhenDragging: Opacity(opacity: 0.35, child: content),
+        child: content,
+      );
+    }
+    return MouseRegion(
+      onEnter: (_) => widget.onEventHover?.call(event),
+      onExit: (_) => widget.onEventHover?.call(null),
+      child: content,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final day = widget.day;
     final dateKey = date_utils.toDateKey(day);
-    final timedEvents = (widget.events[dateKey] ?? const <CalendarEvent>[])
-        .where((e) => e.time != null)
-        .toList();
+    final timedEvents =
+        (widget.events[dateKey] ?? const <CalendarEvent>[])
+            .where((e) => e.time != null)
+            .toList()
+          ..sort((a, b) {
+            final byTime = a.time!.compareTo(b.time!);
+            if (byTime != 0) return byTime;
+            return a.id.compareTo(b.id);
+          });
     final isToday = date_utils.isSameDay(day, widget.now);
     final nowMinutes = widget.now.hour * 60 + widget.now.minute;
-    final lanes = _layout(timedEvents);
+    final titles = _titleLayout(timedEvents);
 
     return DragTarget<CalendarEvent>(
       onWillAcceptWithDetails: (details) => widget.onEventMove != null,
@@ -803,6 +872,12 @@ class _DayColumnState extends State<_DayColumn> {
       builder: (context, candidates, _) => SizedBox(
         key: _columnKey,
         width: widget.width,
+        height: titles.values.fold<double>(
+          24 * _hourHeight,
+          (height, title) => title.top + title.height > height
+              ? title.top + title.height
+              : height,
+        ),
         child: Stack(
           children: [
             GestureDetector(
@@ -902,12 +977,8 @@ class _DayColumnState extends State<_DayColumn> {
                 key: ValueKey(e.id),
                 theme: theme,
                 event: e,
-                left:
-                    2 +
-                    (lanes[e.id]?.$1 ?? 0) *
-                        (widget.width - 14) /
-                        (lanes[e.id]?.$2 ?? 1),
-                width: (widget.width - 14) / (lanes[e.id]?.$2 ?? 1),
+                left: 2,
+                width: widget.width - 14,
                 onTap: () => widget.onEventPress(e),
                 movable: widget.onEventMove != null && isMovableEvent(e),
                 onResize: widget.onEventResize == null
@@ -915,6 +986,15 @@ class _DayColumnState extends State<_DayColumn> {
                     : (time, duration) =>
                           widget.onEventResize!(e, time, duration),
                 onHover: widget.onEventHover,
+              ),
+            for (final event in timedEvents)
+              Positioned(
+                key: ValueKey('event-title:${event.id}'),
+                top: titles[event.id]!.top,
+                left: 8,
+                width: widget.width - 20,
+                height: titles[event.id]!.height,
+                child: _stackedTitle(event, titles[event.id]!.top),
               ),
             if (isToday)
               Positioned(
@@ -992,16 +1072,17 @@ class _EventBlockState extends State<_EventBlock> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            event.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: tone.title,
+          if (width != null || _resizing)
+            Text(
+              event.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: tone.title,
+              ),
             ),
-          ),
           if (_resizing && height > 34)
             Text(
               '${date_utils.formatTimeLabel(date_utils.timeFromMinutes(start))} · ${date_utils.formatDurationLabel(duration)}',
@@ -1009,7 +1090,8 @@ class _EventBlockState extends State<_EventBlock> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11, color: tone.detail),
             )
-          else if (height > 38 &&
+          else if (width != null &&
+              height > 38 &&
               event.location != null &&
               event.location!.isNotEmpty)
             Text(
