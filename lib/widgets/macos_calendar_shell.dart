@@ -1,3 +1,5 @@
+import 'app_dialog.dart';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +30,7 @@ class MacosCalendarShell extends StatelessWidget {
     this.calendarControls = const [],
     this.featureControls = const [],
     this.importedControls = const [],
+    this.subscriptionControls = const [],
     this.onConnect,
     this.onSettings,
     this.onNavigate,
@@ -43,13 +46,12 @@ class MacosCalendarShell extends StatelessWidget {
   final ViewMode view;
   final ValueChanged<ViewMode> onViewChanged;
   final VoidCallback onPrevious, onNext, onToday, onCreate, onSearch, onManage;
-  final VoidCallback?
-  onConnect,
-  onSettings,
-  onActivate,
-  onDuplicate,
-  onPalette,
-  onRefresh;
+  final VoidCallback? onConnect,
+      onSettings,
+      onActivate,
+      onDuplicate,
+      onPalette,
+      onRefresh;
   final bool eventEditorOpen;
   final void Function(int dx, int dy)? onNavigate;
   final void Function(int days, int minutes)? onNudge;
@@ -59,6 +61,7 @@ class MacosCalendarShell extends StatelessWidget {
   final List<Widget> calendarControls;
   final List<Widget> featureControls;
   final List<Widget> importedControls;
+  final List<Widget> subscriptionControls;
   final Widget child;
   static const labels = {
     ViewMode.month: '월간',
@@ -112,6 +115,15 @@ class MacosCalendarShell extends StatelessWidget {
         else
           control,
     ],
+    if (subscriptionControls.isNotEmpty) ...[
+      const SizedBox(height: 8),
+      _sectionTitle('구독'),
+      for (final control in subscriptionControls)
+        if (dialog && control is CheckboxListTile)
+          _CalendarToggle(control: control)
+        else
+          control,
+    ],
     if (featureControls.isNotEmpty) ...[
       const SizedBox(height: 8),
       _sectionTitle('기능 표시'),
@@ -126,59 +138,25 @@ class MacosCalendarShell extends StatelessWidget {
   void _showCalendars(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: theme.bg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360, maxHeight: 520),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '내 캘린더',
-                        style: TextStyle(
-                          color: theme.text,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    _icon(
-                      '닫기',
-                      CupertinoIcons.xmark,
-                      () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: _displayControls(dialog: true),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: TextButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    (onSettings ?? onManage)();
-                  },
-                  icon: const Icon(CupertinoIcons.gear, size: 18),
-                  label: const Text('설정'),
-                ),
-              ),
-            ],
-          ),
+      builder: (context) => AppDialog(
+        title: const Text('내 캘린더'),
+        icon: CupertinoIcons.calendar,
+        maxWidth: 400,
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: _displayControls(dialog: true),
         ),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              (onSettings ?? onManage)();
+            },
+            icon: const Icon(CupertinoIcons.gear, size: 18),
+            label: const Text('설정'),
+          ),
+        ],
       ),
     );
   }

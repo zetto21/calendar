@@ -1,3 +1,4 @@
+import '../widgets/app_dialog.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -107,11 +108,11 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       await showCupertinoDialog<void>(
         context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
+        builder: (dialogContext) => AppDialog(
           title: const Text('로그인 실패'),
           content: Text(message),
           actions: [
-            CupertinoDialogAction(
+            AppDialogAction(
               isDefaultAction: true,
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('확인'),

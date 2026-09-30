@@ -1,3 +1,5 @@
+import 'app_dialog.dart';
+
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -174,10 +176,10 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
         ? DialogRoute<bool>(
             context: context,
             barrierDismissible: false,
-            builder: (dialogContext) => AlertDialog(
+            builder: (dialogContext) => AppDialog(
+              showClose: false,
               title: const Text('서버에 연결할 수 없습니다'),
               content: const Text('인터넷 연결을 확인한 후 새로고침해 주세요.'),
-              actionsAlignment: MainAxisAlignment.center,
               actions: [
                 TextButton(
                   onPressed: _checkConnection,
@@ -190,11 +192,12 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
         : CupertinoDialogRoute<bool>(
             context: context,
             barrierDismissible: false,
-            builder: (dialogContext) => CupertinoAlertDialog(
+            builder: (dialogContext) => AppDialog(
+              showClose: false,
               title: const Text('서버에 연결할 수 없습니다'),
               content: const Text('인터넷 연결을 확인한 후 새로고침해 주세요.'),
               actions: [
-                CupertinoDialogAction(
+                AppDialogAction(
                   isDefaultAction: true,
                   onPressed: _checkConnection,
                   child: Text(

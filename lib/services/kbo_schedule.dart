@@ -7,18 +7,33 @@ import '../logic/date_utils.dart' as date_utils;
 class KboTeam {
   final String code, name, color;
   const KboTeam(this.code, this.name, this.color);
+
+  String get displayName => switch (code) {
+    'HT' => 'KIA 타이거즈',
+    'KT' => 'KT 위즈',
+    'LG' => 'LG 트윈스',
+    'NC' => 'NC 다이노스',
+    'SK' => 'SSG 랜더스',
+    'OB' => '두산 베어스',
+    'LT' => '롯데 자이언츠',
+    'SS' => '삼성 라이온즈',
+    'WO' => '키움 히어로즈',
+    'HH' => '한화 이글스',
+    _ => name,
+  };
 }
 
 /// KBO teams a user can subscribe to. Naver's team codes on the left.
 const kboTeams = [
   KboTeam('HT', 'KIA', '#EA0029'),
-  KboTeam('NC', 'NC', '#1D467D'),
   KboTeam('KT', 'KT', '#333333'),
+  KboTeam('LG', 'LG', '#C30452'),
+  KboTeam('NC', 'NC', '#1D467D'),
+  KboTeam('SK', 'SSG', '#CE0E2D'),
+  KboTeam('OB', '두산', '#13294B'),
   KboTeam('LT', '롯데', '#002955'),
   KboTeam('SS', '삼성', '#0761A6'),
   KboTeam('WO', '키움', '#7A1E1E'),
-  KboTeam('LG', 'LG', '#C30452'),
-  KboTeam('OB', '두산', '#13294B'),
   KboTeam('HH', '한화', '#FF6600'),
 ];
 
@@ -26,6 +41,7 @@ class KboGame {
   final String gameId, date, homeCode, homeName, awayCode, awayName;
   final String? time, stadium;
   final bool cancelled;
+  final bool finished;
   final int? homeScore, awayScore;
   const KboGame({
     required this.gameId,
@@ -37,6 +53,7 @@ class KboGame {
     required this.awayName,
     this.stadium,
     required this.cancelled,
+    this.finished = false,
     this.homeScore,
     this.awayScore,
   });
@@ -52,10 +69,7 @@ class KboScheduleService {
   /// Fetches every KBO game (all teams) scheduled within [from, to] in a
   /// single request, so callers filtering/merging by team never end up
   /// issuing one request per team and re-fetching the same game twice.
-  static Future<List<KboGame>> fetchSchedule(
-    DateTime from,
-    DateTime to,
-  ) async {
+  static Future<List<KboGame>> fetchSchedule(DateTime from, DateTime to) async {
     final uri = Uri.parse(_base).replace(
       queryParameters: {
         'fields': 'basic,schedule,baseball,manualRelayUrl',
@@ -93,6 +107,7 @@ class KboScheduleService {
       awayName: raw['awayTeamName'] as String,
       stadium: raw['stadium'] as String?,
       cancelled: raw['cancel'] == true,
+      finished: raw['statusCode'] == 'RESULT',
       homeScore: raw['homeTeamScore'] as int?,
       awayScore: raw['awayTeamScore'] as int?,
     );

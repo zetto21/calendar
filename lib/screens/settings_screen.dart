@@ -1,3 +1,5 @@
+import '../widgets/app_dialog.dart';
+
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -535,47 +537,20 @@ class SettingsScreen extends StatelessWidget {
     bool confirm = false,
     bool destructive = false,
   }) {
-    if (_isAndroid) {
-      return showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            if (confirm)
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('취소'),
-              ),
-            TextButton(
-              style: destructive
-                  ? TextButton.styleFrom(
-                      foregroundColor: Theme.of(dialogContext)
-                          .colorScheme
-                          .error,
-                    )
-                  : null,
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(action),
-            ),
-          ],
-        ),
-      );
-    }
     return showCupertinoDialog<bool>(
       context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
+      builder: (dialogContext) => AppDialog(
         title: Text(title),
         content: Text(message),
         actions: [
           if (confirm)
-            CupertinoDialogAction(
+            AppDialogAction(
               onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('취소'),
             ),
-          CupertinoDialogAction(
+          AppDialogAction(
             isDestructiveAction: destructive,
-            isDefaultAction: confirm && !destructive,
+            isDefaultAction: !destructive,
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: Text(action),
           ),
@@ -654,12 +629,11 @@ class SettingsScreen extends StatelessWidget {
                   Text('${(value * 100).round()}% 완료'),
                 ],
               );
-              return _isAndroid
-                  ? AlertDialog(title: const Text('백업 중'), content: content)
-                  : CupertinoAlertDialog(
-                      title: const Text('백업 중'),
-                      content: content,
-                    );
+              return AppDialog(
+                showClose: false,
+                title: const Text('백업 중'),
+                content: content,
+              );
             },
           ),
         ),

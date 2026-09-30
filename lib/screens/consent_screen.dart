@@ -1,3 +1,4 @@
+import '../widgets/app_dialog.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -56,11 +57,11 @@ class _ConsentScreenState extends State<ConsentScreen> {
       if (!mounted) return;
       await showCupertinoDialog<void>(
         context: context,
-        builder: (context) => CupertinoAlertDialog(
+        builder: (context) => AppDialog(
           title: const Text('동의 내용을 저장하지 못했습니다'),
           content: const Text('잠시 후 다시 시도해 주세요.'),
           actions: [
-            CupertinoDialogAction(
+            AppDialogAction(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('확인'),
             ),

@@ -1,3 +1,5 @@
+import 'app_dialog.dart';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
@@ -33,11 +35,13 @@ class PersonalCalendars extends StatelessWidget {
     super.key,
     required this.calendars,
     required this.onSave,
+    required this.onDelete,
     required this.personalVisible,
     required this.onPersonalVisibilityChanged,
   });
   final List<PersonalCalendar> calendars;
   final Future<void> Function(PersonalCalendar) onSave;
+  final Future<void> Function(PersonalCalendar) onDelete;
   final bool personalVisible;
   final ValueChanged<bool> onPersonalVisibilityChanged;
 
@@ -48,36 +52,111 @@ class PersonalCalendars extends StatelessWidget {
     );
   }
 
+  Future<void> _showMenu(
+    BuildContext context,
+    PersonalCalendar calendar,
+    Offset globalPosition,
+  ) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final position = overlay.globalToLocal(globalPosition);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromSize(position & Size.zero, overlay.size),
+      color: AppDialogStyle.background(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppDialogStyle.border(context)),
+      ),
+      items: [
+        const PopupMenuItem(value: 'edit', child: Text('수정')),
+        PopupMenuItem(
+          value: 'delete',
+          enabled: calendar.id != 'personal',
+          child: Text(
+            calendar.id == 'personal' ? '삭제 불가 · 기본 캘린더' : '삭제',
+            style: calendar.id == 'personal'
+                ? null
+                : TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      ],
+    );
+    if (!context.mounted) return;
+    if (action == 'edit') {
+      await _edit(context, calendar);
+    } else if (action == 'delete') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AppDialog(
+          title: const Text('캘린더 삭제'),
+          content: Text('‘${calendar.title}’ 캘린더를 목록에서 삭제할까요?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('취소'),
+            ),
+            AppDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('삭제'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      try {
+        await onDelete(calendar);
+      } catch (_) {
+        if (!context.mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AppDialog(
+            title: const Text('캘린더 삭제 실패'),
+            content: const Text('삭제하지 못했습니다. 다시 시도해 주세요.'),
+            actions: [
+              AppDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('확인'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
       for (final calendar in calendars)
-        ListTile(
-          dense: true,
-          contentPadding: const EdgeInsets.only(left: 12, right: 4),
-          leading: calendar.id == 'personal'
-              ? Checkbox(
-                  value: personalVisible,
-                  activeColor: colorFromHex(calendar.color),
-                  onChanged: (value) => onPersonalVisibilityChanged(value!),
-                )
-              : Icon(
-                  Icons.circle,
-                  color: colorFromHex(calendar.color),
-                  size: 16,
-                ),
-          title: Text(
-            calendar.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13),
-          ),
-          onTap: () => _edit(context, calendar),
-          trailing: IconButton(
-            tooltip: '${calendar.title} 편집',
-            icon: const Icon(Icons.edit_outlined, size: 16),
-            onPressed: () => _edit(context, calendar),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPressStart: (details) =>
+              _showMenu(context, calendar, details.globalPosition),
+          onSecondaryTapDown: (details) =>
+              _showMenu(context, calendar, details.globalPosition),
+          child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.only(left: 12, right: 4),
+            leading: calendar.id == 'personal'
+                ? Checkbox(
+                    value: personalVisible,
+                    activeColor: colorFromHex(calendar.color),
+                    onChanged: (value) => onPersonalVisibilityChanged(value!),
+                  )
+                : Icon(
+                    Icons.circle,
+                    color: colorFromHex(calendar.color),
+                    size: 16,
+                  ),
+            title: Text(
+              calendar.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13),
+            ),
           ),
         ),
       ListTile(
@@ -150,32 +229,10 @@ class _CalendarEditorState extends State<_CalendarEditor> {
         .name;
     return PopScope(
       canPop: !_saving,
-      child: AlertDialog(
-        backgroundColor: colors.surface,
-        surfaceTintColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 0),
-        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-        actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                widget.calendar == null ? '캘린더 추가' : '캘린더 편집',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: '닫기',
-              onPressed: _saving ? null : () => Navigator.pop(context),
-              icon: const Icon(Icons.close_rounded, size: 20),
-            ),
-          ],
-        ),
+      child: AppDialog(
+        title: Text(widget.calendar == null ? '캘린더 추가' : '캘린더 편집'),
+        icon: Icons.calendar_today_outlined,
+        busy: _saving,
         content: SizedBox(
           width: 360,
           child: SingleChildScrollView(
@@ -257,23 +314,8 @@ class _CalendarEditorState extends State<_CalendarEditor> {
                   enabled: !_saving,
                   maxLength: 50,
                   textInputAction: TextInputAction.done,
-                  decoration: InputDecoration(
-                    hintText: '예: 개인, 업무, 가족',
-                    filled: true,
-                    fillColor: colors.onSurface.withValues(alpha: .04),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: selectedColor, width: 1.5),
-                    ),
-                  ),
+                  style: const TextStyle(fontSize: 14),
+                  decoration: const InputDecoration(hintText: '예: 개인, 업무, 가족'),
                   onChanged: (_) => setState(() {}),
                   onSubmitted: (_) => _save(),
                 ),
@@ -369,12 +411,6 @@ class _CalendarEditorState extends State<_CalendarEditor> {
             child: const Text('취소'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(100, 44),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
             onPressed: _saving || _title.text.trim().isEmpty ? null : _save,
             child: Text(_saving ? '저장 중…' : '저장'),
           ),

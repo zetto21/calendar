@@ -1,3 +1,5 @@
+import '../widgets/app_dialog.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -112,6 +114,8 @@ class _EventSheetState extends State<EventSheet> {
       return;
     }
     final picked = await showDatePicker(
+      builder: (context, child) =>
+          Theme(data: AppDialogStyle.theme(context), child: child!),
       context: context,
       initialDate: _date,
       firstDate: DateTime(2000),
@@ -132,6 +136,8 @@ class _EventSheetState extends State<EventSheet> {
       return;
     }
     final picked = await showTimePicker(
+      builder: (context, child) =>
+          Theme(data: AppDialogStyle.theme(context), child: child!),
       context: context,
       initialTime: _startTime,
     );
@@ -169,6 +175,8 @@ class _EventSheetState extends State<EventSheet> {
       return;
     }
     final picked = await showTimePicker(
+      builder: (context, child) =>
+          Theme(data: AppDialogStyle.theme(context), child: child!),
       context: context,
       initialTime: _endTime,
     );
@@ -262,84 +270,73 @@ class _EventSheetState extends State<EventSheet> {
     RepeatFrequency? tempFreq = _frequency;
     DateTime? tempUntil = _until;
     final theme = widget.theme;
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      backgroundColor: theme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, setSheetState) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '반복',
-                  style: TextStyle(
-                    color: theme.text,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
+        builder: (sheetContext, setSheetState) => AppDialog(
+          title: const Text('반복'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _RepeatOptionTile(
+                label: '안함',
+                selected: tempFreq == null,
+                onTap: () => setSheetState(() {
+                  tempFreq = null;
+                  tempUntil = null;
+                }),
+                theme: theme,
+              ),
+              for (final freq in RepeatFrequency.values)
                 _RepeatOptionTile(
-                  label: '안함',
-                  selected: tempFreq == null,
-                  onTap: () => setSheetState(() {
-                    tempFreq = null;
-                    tempUntil = null;
-                  }),
+                  label: _frequencyLabel(freq),
+                  selected: tempFreq == freq,
+                  onTap: () => setSheetState(() => tempFreq = freq),
                   theme: theme,
                 ),
-                for (final freq in RepeatFrequency.values)
-                  _RepeatOptionTile(
-                    label: _frequencyLabel(freq),
-                    selected: tempFreq == freq,
-                    onTap: () => setSheetState(() => tempFreq = freq),
-                    theme: theme,
+              if (tempFreq != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    '반복 종료',
+                    style: TextStyle(color: theme.textSecondary),
                   ),
-                if (tempFreq != null)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      '반복 종료',
-                      style: TextStyle(color: theme.textSecondary),
-                    ),
-                    trailing: Text(
-                      tempUntil != null
-                          ? date_utils.toDateKey(tempUntil!)
-                          : '없음',
-                      style: TextStyle(color: theme.text),
-                    ),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: sheetContext,
-                        initialDate: tempUntil ?? _date,
-                        firstDate: _date,
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setSheetState(() => tempUntil = picked);
-                      }
-                    },
+                  trailing: Text(
+                    tempUntil != null ? date_utils.toDateKey(tempUntil!) : '없음',
+                    style: TextStyle(color: theme.text),
                   ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: () => Navigator.pop(sheetContext, {
-                    'freq': tempFreq,
-                    'until': tempUntil,
-                  }),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                  ),
-                  child: const Text('완료'),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      builder: (context, child) => Theme(
+                        data: AppDialogStyle.theme(context),
+                        child: child!,
+                      ),
+                      context: sheetContext,
+                      initialDate: tempUntil ?? _date,
+                      firstDate: _date,
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setSheetState(() => tempUntil = picked);
+                    }
+                  },
                 ),
-              ],
-            ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(sheetContext),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(sheetContext, {
+                'freq': tempFreq,
+                'until': tempUntil,
+              }),
+              child: const Text('저장'),
+            ),
+          ],
         ),
       ),
     );
@@ -353,53 +350,31 @@ class _EventSheetState extends State<EventSheet> {
 
   Future<void> _pickColor() async {
     final theme = widget.theme;
-    final result = await showModalBottomSheet<String>(
+    final result = await showDialog<String>(
       context: context,
-      backgroundColor: theme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                '색상',
-                style: TextStyle(
-                  color: theme.text,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
+      builder: (sheetContext) => AppDialog(
+        title: const Text('색상'),
+        content: Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            for (final entry in palette)
+              GestureDetector(
+                onTap: () =>
+                    Navigator.pop(sheetContext, colorToHex(entry.value)),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: entry.value,
+                    shape: BoxShape.circle,
+                    border: _color.toUpperCase() == colorToHex(entry.value)
+                        ? Border.all(color: theme.text, width: 2)
+                        : null,
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 14,
-                runSpacing: 14,
-                children: [
-                  for (final entry in palette)
-                    GestureDetector(
-                      onTap: () =>
-                          Navigator.pop(sheetContext, colorToHex(entry.value)),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: entry.value,
-                          shape: BoxShape.circle,
-                          border:
-                              _color.toUpperCase() == colorToHex(entry.value)
-                              ? Border.all(color: theme.text, width: 2)
-                              : null,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -409,15 +384,15 @@ class _EventSheetState extends State<EventSheet> {
   Future<void> _confirmDelete() async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
+      builder: (dialogContext) => AppDialog(
         title: const Text('일정 삭제'),
         content: const Text('이 일정을 삭제하시겠어요?'),
         actions: [
-          CupertinoDialogAction(
+          AppDialogAction(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('취소'),
           ),
-          CupertinoDialogAction(
+          AppDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('삭제'),
@@ -686,15 +661,13 @@ class _EventSheetState extends State<EventSheet> {
     TextInputType? keyboardType,
   }) => _desktopRow(
     icon,
-    CupertinoTextField.borderless(
+    TextField(
       controller: controller,
       minLines: 1,
       maxLines: maxLines,
       keyboardType: keyboardType,
       style: TextStyle(color: widget.theme.text, fontSize: 14),
-      padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
-      placeholder: hint,
-      placeholderStyle: TextStyle(color: widget.theme.textMuted, fontSize: 14),
+      decoration: InputDecoration(hintText: hint),
     ),
     top: maxLines > 1,
   );
@@ -702,59 +675,28 @@ class _EventSheetState extends State<EventSheet> {
   Widget _buildSidebar(BuildContext context) {
     final theme = widget.theme;
     return ColoredBox(
-      color: theme.bg,
+      color: AppDialogStyle.background(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.isEditing ? '일정 편집' : '일정 추가',
-                    style: TextStyle(
-                      color: theme.text,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: '닫기 · esc',
-                  onPressed: _close,
-                  icon: Icon(
-                    CupertinoIcons.xmark,
-                    size: 16,
-                    color: theme.textMuted,
-                  ),
-                ),
-              ],
-            ),
+          AppDialogHeader(
+            title: Text(widget.isEditing ? '일정 편집' : '일정 추가'),
+            onClose: _close,
           ),
           Divider(height: 1, color: theme.border),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: AppDialogStyle.bodyPadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  CupertinoTextField.borderless(
+                  TextField(
                     controller: _titleController,
                     autofocus: !widget.isEditing,
                     minLines: 1,
                     maxLines: 3,
-                    placeholder: '제목 추가',
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    style: TextStyle(
-                      color: theme.text,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    placeholderStyle: TextStyle(
-                      color: theme.textMuted,
-                      fontSize: 20,
-                    ),
+                    style: TextStyle(color: theme.text, fontSize: 14),
+                    decoration: const InputDecoration(hintText: '일정 제목'),
                   ),
                   const SizedBox(height: 16),
                   _desktopRow(
@@ -887,7 +829,7 @@ class _EventSheetState extends State<EventSheet> {
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: Row(
                 children: [
                   if (widget.isEditing && widget.onDelete != null)
@@ -900,6 +842,7 @@ class _EventSheetState extends State<EventSheet> {
                         color: CupertinoColors.destructiveRed,
                       ),
                     ),
+                  const Spacer(),
                   TextButton(
                     onPressed: _close,
                     child: Text(
@@ -908,20 +851,7 @@ class _EventSheetState extends State<EventSheet> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton(
-                      onPressed: _save,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: theme.text,
-                        foregroundColor: theme.bg,
-                        minimumSize: const Size(0, 40),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text('저장  ⌘↵'),
-                    ),
-                  ),
+                  FilledButton(onPressed: _save, child: const Text('저장  ⌘↵')),
                 ],
               ),
             ),
@@ -935,187 +865,122 @@ class _EventSheetState extends State<EventSheet> {
     final theme = widget.theme;
     final swatches = [...palette.skip(6).take(6), ...palette.take(6)];
     final durationLabel = date_utils.formatDurationLabel(_durationMinutes);
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.surface,
-        borderRadius: widget.embedded ? null : BorderRadius.circular(14),
-        border: widget.embedded ? null : Border.all(color: theme.border),
-        boxShadow: widget.embedded
-            ? null
-            : const [BoxShadow(color: Color(0x33000000), blurRadius: 32)],
-      ),
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 14),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (widget.embedded) ...[
-              Text(
-                widget.isEditing ? '일정 편집' : '일정 추가',
-                style: TextStyle(
-                  color: theme.text,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+    return AppDialog(
+      title: Text(widget.isEditing ? '일정 편집' : '일정 추가'),
+      maxWidth: 580,
+      onClose: _close,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _titleController,
+                  autofocus: !widget.isEditing,
+                  minLines: 1,
+                  maxLines: 3,
+                  style: TextStyle(color: theme.text, fontSize: 14),
+                  decoration: const InputDecoration(hintText: '일정 제목'),
                 ),
               ),
-              const SizedBox(height: 12),
             ],
-            Row(
+          ),
+          const SizedBox(height: 6),
+          _desktopRow(
+            CupertinoIcons.time,
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
-                  child: CupertinoTextField.borderless(
-                    controller: _titleController,
-                    autofocus: !widget.isEditing,
-                    style: TextStyle(
-                      color: theme.text,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    placeholder: '제목 없음',
-                    placeholderStyle: TextStyle(
-                      color: theme.textMuted,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                  ),
-                ),
-                IconButton(
-                  tooltip: '닫기 · esc',
-                  onPressed: _close,
-                  icon: Icon(
-                    CupertinoIcons.xmark,
-                    size: 16,
+                _chip(_shortDateLabel(_date), _pickDate, strong: true),
+                if (!_isAllDay) ...[
+                  _chip(_startTime.format(context), _pickStartDateTime),
+                  Icon(
+                    CupertinoIcons.arrow_right,
+                    size: 13,
                     color: theme.textMuted,
                   ),
+                  _chip(_endTime.format(context), _pickEndTime),
+                  Text(
+                    durationLabel,
+                    style: TextStyle(color: theme.textMuted, fontSize: 12),
+                  ),
+                ],
+                _chip(
+                  _isAllDay ? '종일 ✓' : '종일',
+                  () => setState(() => _isAllDay = !_isAllDay),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            _desktopRow(
-              CupertinoIcons.time,
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _chip(_shortDateLabel(_date), _pickDate, strong: true),
-                  if (!_isAllDay) ...[
-                    _chip(_startTime.format(context), _pickStartDateTime),
-                    Icon(
-                      CupertinoIcons.arrow_right,
-                      size: 13,
-                      color: theme.textMuted,
-                    ),
-                    _chip(_endTime.format(context), _pickEndTime),
-                    Text(
-                      durationLabel,
-                      style: TextStyle(color: theme.textMuted, fontSize: 12),
-                    ),
-                  ],
-                  _chip(
-                    _isAllDay ? '종일 ✓' : '종일',
-                    () => setState(() => _isAllDay = !_isAllDay),
-                  ),
-                ],
+          ),
+          _desktopRow(
+            CupertinoIcons.repeat,
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _chip(
+                _frequency == null ? '반복 안 함' : _frequencyLabel(_frequency!),
+                _pickRepeat,
               ),
             ),
-            _desktopRow(
-              CupertinoIcons.repeat,
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _chip(
-                  _frequency == null ? '반복 안 함' : _frequencyLabel(_frequency!),
-                  _pickRepeat,
-                ),
-              ),
-            ),
-            _desktopField(
-              CupertinoIcons.location,
-              _locationController,
-              '장소 추가',
-            ),
-            _desktopField(
-              CupertinoIcons.link,
-              _urlController,
-              'URL 추가',
-              keyboardType: TextInputType.url,
-            ),
-            _desktopField(
-              CupertinoIcons.text_alignleft,
-              _descriptionController,
-              '설명 추가',
-              maxLines: 5,
-            ),
-            _desktopRow(
-              CupertinoIcons.paintbrush,
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final entry in swatches)
-                    GestureDetector(
-                      onTap: () =>
-                          setState(() => _color = colorToHex(entry.value)),
-                      child: Tooltip(
-                        message: entry.name,
-                        child: Container(
-                          width: 18,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            color: entry.value,
-                            shape: BoxShape.circle,
-                            border:
-                                _color.toUpperCase() == colorToHex(entry.value)
-                                ? Border.all(color: theme.text, width: 2)
-                                : null,
-                          ),
+          ),
+          _desktopField(CupertinoIcons.location, _locationController, '장소 추가'),
+          _desktopField(
+            CupertinoIcons.link,
+            _urlController,
+            'URL 추가',
+            keyboardType: TextInputType.url,
+          ),
+          _desktopField(
+            CupertinoIcons.text_alignleft,
+            _descriptionController,
+            '설명 추가',
+            maxLines: 5,
+          ),
+          _desktopRow(
+            CupertinoIcons.paintbrush,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final entry in swatches)
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _color = colorToHex(entry.value)),
+                    child: Tooltip(
+                      message: entry.name,
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: entry.value,
+                          shape: BoxShape.circle,
+                          border:
+                              _color.toUpperCase() == colorToHex(entry.value)
+                              ? Border.all(color: theme.text, width: 2)
+                              : null,
                         ),
                       ),
                     ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            Divider(height: 1, color: theme.border),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (widget.isEditing && widget.onDelete != null)
-                  TextButton.icon(
-                    onPressed: _confirmDelete,
-                    icon: const Icon(CupertinoIcons.trash, size: 15),
-                    label: const Text('삭제'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: CupertinoColors.destructiveRed,
-                    ),
                   ),
-                const Spacer(),
-                TextButton(
-                  onPressed: _close,
-                  child: Text(
-                    '취소',
-                    style: TextStyle(color: theme.textSecondary),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                FilledButton(
-                  onPressed: _save,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: theme.text,
-                    foregroundColor: theme.bg,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('저장  ⌘↵'),
-                ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+      actions: [
+        if (widget.isEditing && widget.onDelete != null)
+          TextButton.icon(
+            onPressed: _confirmDelete,
+            icon: const Icon(CupertinoIcons.trash, size: 16),
+            label: const Text('삭제'),
+            style: TextButton.styleFrom(foregroundColor: theme.danger),
+          ),
+        TextButton(onPressed: _close, child: const Text('취소')),
+        FilledButton(onPressed: _save, child: const Text('저장  ⌘↵')),
+      ],
     );
   }
 
@@ -1138,8 +1003,17 @@ class _EventSheetState extends State<EventSheet> {
 
   @override
   Widget build(BuildContext context) {
-    if (_desktop && widget.embedded) return _buildSidebar(context);
-    if (_desktop) return _buildDesktop(context);
+    if (_desktop) {
+      return Theme(
+        data: AppDialogStyle.theme(context),
+        child: Material(
+          type: MaterialType.transparency,
+          child: widget.embedded
+              ? _buildSidebar(context)
+              : _buildDesktop(context),
+        ),
+      );
+    }
     final theme = widget.theme;
     const blue = Color(0xFF3B82F6);
     return Padding(

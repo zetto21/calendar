@@ -282,15 +282,19 @@ class ImportedEvents extends ChangeNotifier {
       final event = CalendarEvent(
         id: 'import:kbo:$primaryCode:${game.gameId}',
         date: game.date,
-        title:
-            '${game.awayName} vs ${game.homeName}'
-            '${game.cancelled ? ' (취소)' : ''}',
+        title: game.cancelled
+            ? '${game.awayName} vs ${game.homeName} (취소)'
+            : game.finished && game.awayScore != null && game.homeScore != null
+            ? '${game.awayName} ${game.awayScore} vs ${game.homeScore} ${game.homeName}'
+            : '${game.awayName} vs ${game.homeName}',
         time: game.time,
+        location: game.stadium?.trim().isNotEmpty == true
+            ? game.stadium!.trim()
+            : null,
         duration: _kboGameDurationMinutes,
         color: colorByCode[primaryCode] ?? '#707078',
         systemCalendarId: 'kbo|$primaryCode',
         description: [
-          if (game.stadium != null && game.stadium!.isNotEmpty) game.stadium!,
           if (game.homeScore != null && game.awayScore != null)
             '${game.awayName} ${game.awayScore} : ${game.homeScore} ${game.homeName}',
         ].join(' · '),

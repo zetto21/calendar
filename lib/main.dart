@@ -1,8 +1,11 @@
+import 'widgets/app_dialog.dart';
 import 'services/desktop_notifications.dart';
 
 import 'dart:async';
 import 'dart:convert';
+
 import 'widgets/personal_calendars.dart';
+
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -50,6 +53,7 @@ import 'widgets/top_bar.dart';
 import 'widgets/command_palette.dart';
 import 'widgets/macos_calendar_shell.dart';
 import 'widgets/imported_calendar_group.dart';
+import 'widgets/subscription_dialog.dart';
 import 'widgets/liquid_glass.dart';
 import 'widgets/server_connection_monitor.dart';
 import 'platform.dart';
@@ -257,7 +261,10 @@ class _CalendarHomeState extends State<CalendarHome>
     final raw = await AccountPreferences.instance.get(_personalCalendarsKey);
     if (!mounted || raw is! String) return;
     final calendars = (jsonDecode(raw) as List)
-        .map((item) => PersonalCalendar.fromJson(Map<String, dynamic>.from(item as Map)))
+        .map(
+          (item) =>
+              PersonalCalendar.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
         .toList();
     if (!calendars.any((calendar) => calendar.id == 'personal')) {
       calendars.insert(0, PersonalCalendar.initial);
@@ -273,16 +280,32 @@ class _CalendarHomeState extends State<CalendarHome>
     } else {
       calendars[index] = calendar;
     }
-    await AccountPreferences.instance.set(_personalCalendarsKey,
-        jsonEncode(calendars.map((item) => item.toJson()).toList()));
+    await AccountPreferences.instance.set(
+      _personalCalendarsKey,
+      jsonEncode(calendars.map((item) => item.toJson()).toList()),
+    );
+    if (mounted) setState(() => _personalCalendars = calendars);
+  }
+
+  Future<void> _deletePersonalCalendar(PersonalCalendar calendar) async {
+    if (calendar.id == 'personal') return;
+    final calendars = _personalCalendars
+        .where((item) => item.id != calendar.id)
+        .toList();
+    await AccountPreferences.instance.set(
+      _personalCalendarsKey,
+      jsonEncode(calendars.map((item) => item.toJson()).toList()),
+    );
     if (mounted) setState(() => _personalCalendars = calendars);
   }
 
   Widget _personalCalendarControls() => PersonalCalendars(
     calendars: _personalCalendars,
     onSave: _savePersonalCalendar,
+    onDelete: _deletePersonalCalendar,
     personalVisible: _showPersonalCalendar,
-    onPersonalVisibilityChanged: (value) => setState(() => _showPersonalCalendar = value),
+    onPersonalVisibilityChanged: (value) =>
+        setState(() => _showPersonalCalendar = value),
   );
   DateTime _anchorDate = DateTime.now();
   DateTime? _rollingWeekStart;
@@ -430,7 +453,13 @@ class _CalendarHomeState extends State<CalendarHome>
     if (!LiveActivity.isMacOS) return;
     final items = <Map<String, Object>>[
       {'id': 'section:calendars', 'title': '캘린더', 'header': true},
-      {'id': 'personal', 'title': _personalCalendars.firstWhere((calendar) => calendar.id == 'personal').title, 'visible': _showPersonalCalendar},
+      {
+        'id': 'personal',
+        'title': _personalCalendars
+            .firstWhere((calendar) => calendar.id == 'personal')
+            .title,
+        'visible': _showPersonalCalendar,
+      },
       for (final source in imported.sources.entries)
         for (final calendar in source.value)
           {
@@ -474,11 +503,11 @@ class _CalendarHomeState extends State<CalendarHome>
       if (!manual) return;
       await showDialog<void>(
         context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
+        builder: (dialogContext) => AppDialog(
           title: const Text('최신 버전입니다'),
           content: const Text('이미 최신 버전을 사용하고 있습니다.'),
           actions: [
-            CupertinoDialogAction(
+            AppDialogAction(
               isDefaultAction: true,
               onPressed: () => Navigator.of(dialogContext).pop(),
               child: const Text('확인'),
@@ -491,18 +520,16 @@ class _CalendarHomeState extends State<CalendarHome>
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => CupertinoAlertDialog(
+      builder: (dialogContext) => AppDialog(
         title: const Text('업데이트가 필요합니다'),
         content: Text('새 버전 ${update.version}이 출시되었습니다. 최신 버전으로 업데이트해 주세요.'),
         actions: [
-          CupertinoDialogAction(
-            isDestructiveAction: true,
+          AppDialogAction(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('나중에'),
           ),
-          CupertinoDialogAction(
+          AppDialogAction(
             isDefaultAction: true,
-            textStyle: const TextStyle(color: CupertinoColors.systemBlue),
             onPressed: () async {
               final url = update.updateUrl;
               if (url == null) return;
@@ -519,12 +546,12 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _showStatusNotice(int id, String title, String message) async {
-    final sent = await DesktopNotifications.show(
-      id: id,
-      title: title,
-      body: message,
-    );
-    if (!mounted || sent) return;
+    if (!mounted) return;
+    if (DesktopNotifications.supported) {
+      // Respect macOS notification settings without displaying a bottom bar.
+      await DesktopNotifications.show(id: id, title: title, body: message);
+      return;
+    }
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
@@ -781,268 +808,54 @@ class _CalendarHomeState extends State<CalendarHome>
       final status = await LiveActivity.status();
       if (!mounted) return;
       final candidates = _liveActivityCandidates();
-      final dark = Theme.of(context).brightness == Brightness.dark;
-      final primaryText = dark
-          ? const Color(0xFFF4F4F5)
-          : const Color(0xFF242427);
-      final secondaryText = dark
-          ? const Color(0xFF9999A1)
-          : const Color(0xFF777780);
       final selected = await showDialog<String>(
         context: context,
-        barrierColor: Colors.black.withValues(alpha: 0.62),
-        builder: (dialogContext) => Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 24,
-            vertical: 24,
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480, maxHeight: 620),
-            child: Container(
-              decoration: BoxDecoration(
-                color: dark ? const Color(0xFF232326) : Colors.white,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: dark
-                      ? Colors.white.withValues(alpha: .09)
-                      : Colors.black.withValues(alpha: .07),
+        builder: (dialogContext) => AppDialog(
+          title: const Text('일정 실시간 현황'),
+          icon: Icons.bolt_rounded,
+          maxWidth: 480,
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('메뉴 막대에 표시할 일정을 선택하세요.'),
+              const SizedBox(height: 20),
+              if (candidates.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('진행 중이거나 10분 이내에 시작하는 일정이 없습니다.'),
                 ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x66000000),
-                    blurRadius: 48,
-                    offset: Offset(0, 20),
+              for (final event in candidates)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
                   ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 20, 14, 18),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF5B9BFF)
-                                .withValues(alpha: .15),
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                          child: const Icon(
-                            Icons.bolt_rounded,
-                            color: Color(0xFF78AAFF),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '일정 실시간 현황',
-                                style: TextStyle(
-                                  color: primaryText,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '메뉴 막대에 표시할 일정을 선택하세요',
-                                style: TextStyle(
-                                  color: secondaryText,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: '닫기',
-                          onPressed: () => Navigator.pop(dialogContext),
-                          icon: Icon(Icons.close_rounded, color: secondaryText),
-                        ),
-                      ],
-                    ),
+                  leading: const Icon(
+                    Icons.timelapse,
+                    color: AppDialogStyle.accent,
                   ),
-                  Divider(
-                    height: 1,
-                    color: dark
-                        ? Colors.white.withValues(alpha: .08)
-                        : Colors.black.withValues(alpha: .07),
+                  title: Text(event.event.title),
+                  subtitle: Text(
+                    '${TimeOfDay.fromDateTime(event.start.toLocal()).format(dialogContext)} – ${TimeOfDay.fromDateTime(event.end.toLocal()).format(dialogContext)} · ${event.end.difference(DateTime.now()).inMinutes.clamp(0, 99999)}분 남음',
                   ),
-                  Flexible(
-                    child: candidates.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.fromLTRB(30, 42, 30, 42),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.event_available_rounded,
-                                  size: 42,
-                                  color: secondaryText.withValues(alpha: .7),
-                                ),
-                                const SizedBox(height: 14),
-                                Text(
-                                  '표시할 일정이 없습니다',
-                                  style: TextStyle(
-                                    color: primaryText,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                                const SizedBox(height: 7),
-                                Text(
-                                  '진행 중이거나 10분 이내에 시작하는\n시간 지정 일정이 여기에 표시됩니다.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: secondaryText,
-                                    height: 1.45,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.separated(
-                            shrinkWrap: true,
-                            padding: const EdgeInsets.all(14),
-                            itemCount: candidates.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 6),
-                            itemBuilder: (context, index) {
-                              final event = candidates[index];
-                              final active = status.eventIDs.contains(event.id);
-                              final remaining = event.end
-                                  .difference(DateTime.now())
-                                  .inMinutes
-                                  .clamp(0, 99999);
-                              return Material(
-                                color: active
-                                    ? const Color(0xFF5B9BFF)
-                                          .withValues(alpha: .12)
-                                    : (dark
-                                          ? Colors.white.withValues(alpha: .045)
-                                          : Colors.black.withValues(
-                                              alpha: .035,
-                                            )),
-                                borderRadius: BorderRadius.circular(13),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(13),
-                                  onTap: () =>
-                                      Navigator.pop(dialogContext, event.id),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 13,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 4,
-                                          height: 38,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF78AAFF),
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                event.event.title,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: primaryText,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '${TimeOfDay.fromDateTime(event.start.toLocal()).format(dialogContext)} – ${TimeOfDay.fromDateTime(event.end.toLocal()).format(dialogContext)}',
-                                                style: TextStyle(
-                                                  color: secondaryText,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Text(
-                                          '$remaining분',
-                                          style: const TextStyle(
-                                            color: Color(0xFF9FC0FF),
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Icon(
-                                          active
-                                              ? Icons.check_circle_rounded
-                                              : Icons.chevron_right_rounded,
-                                          color: active
-                                              ? const Color(0xFF78AAFF)
-                                              : secondaryText,
-                                          size: 19,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                  trailing: Icon(
+                    status.eventIDs.contains(event.id)
+                        ? Icons.check_circle_rounded
+                        : Icons.chevron_right_rounded,
                   ),
-                  if (status.eventIDs.isNotEmpty) ...[
-                    Divider(
-                      height: 1,
-                      color: dark
-                          ? Colors.white.withValues(alpha: .08)
-                          : Colors.black.withValues(alpha: .07),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () =>
-                              Navigator.pop(dialogContext, '__end__'),
-                          icon: const Icon(
-                            Icons.stop_circle_outlined,
-                            size: 18,
-                          ),
-                          label: const Text('실시간 현황 종료'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFFF9292),
-                            side: BorderSide(
-                              color: const Color(0xFFFF9292)
-                                  .withValues(alpha: .35),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 13),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                  onTap: () => Navigator.pop(dialogContext, event.id),
+                ),
+            ],
           ),
+          actions: [
+            if (status.eventIDs.isNotEmpty)
+              AppDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, '__end__'),
+                child: const Text('실시간 현황 종료'),
+              ),
+          ],
         ),
       );
       if (selected == null || !mounted) return;
@@ -1056,20 +869,20 @@ class _CalendarHomeState extends State<CalendarHome>
         await LiveActivity.start(matches.first);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              selected == '__end__'
-                  ? '실시간 현황을 종료했습니다.'
-                  : '메뉴 막대에 일정 실시간 현황을 표시합니다.',
-            ),
-          ),
+        await _showStatusNotice(
+          4202,
+          '일정 실시간 현황',
+          selected == '__end__'
+              ? '실시간 현황을 종료했습니다.'
+              : '메뉴 막대에 일정 실시간 현황을 표시합니다.',
         );
       }
     } on PlatformException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message ?? '실시간 현황을 처리하지 못했습니다.')),
+        await _showStatusNotice(
+          4202,
+          '일정 실시간 현황',
+          error.message ?? '실시간 현황을 처리하지 못했습니다.',
         );
       }
     }
@@ -1256,11 +1069,11 @@ class _CalendarHomeState extends State<CalendarHome>
   Future<void> _showCalendarImportError(String message) {
     return showCupertinoDialog<void>(
       context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
+      builder: (dialogContext) => AppDialog(
         title: const Text('캘린더 연동 실패'),
         content: Text(message),
         actions: [
-          CupertinoDialogAction(
+          AppDialogAction(
             isDefaultAction: true,
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('확인'),
@@ -1329,7 +1142,11 @@ class _CalendarHomeState extends State<CalendarHome>
           provider,
           [
             for (final team in kboTeams)
-              ImportCalendar(id: team.code, title: team.name, color: team.color),
+              ImportCalendar(
+                id: team.code,
+                title: team.name,
+                color: team.color,
+              ),
           ],
           date_utils.parseDateKey(from),
           date_utils.parseDateKey(to),
@@ -1354,6 +1171,47 @@ class _CalendarHomeState extends State<CalendarHome>
     } catch (_) {
       if (mounted) await _showCalendarImportError('캘린더 연결을 완료하지 못했습니다.');
     }
+  }
+
+  Future<void> _showSubscriptionDialog() async {
+    _scaffoldKey.currentState?.closeDrawer();
+    final imports = context.read<ImportedEvents>();
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => SubscriptionDialog(
+        existingTeamCodes: {
+          for (final calendar in imports.sources['kbo'] ?? <ImportCalendar>[])
+            calendar.id,
+        },
+        onToggle: (team, enabled) async {
+          final calendars = {
+            for (final calendar in imports.sources['kbo'] ?? <ImportCalendar>[])
+              calendar.id: calendar,
+          };
+          if (enabled) {
+            calendars[team.code] = ImportCalendar(
+              id: team.code,
+              title: team.name,
+              color: team.color,
+            );
+          } else {
+            calendars.remove(team.code);
+          }
+          if (calendars.isEmpty) {
+            await imports.disconnect('kbo', team.code);
+            return;
+          }
+          final (from, to) = _range;
+          await imports.refresh(
+            'kbo',
+            calendars.values.toList(),
+            date_utils.parseDateKey(from),
+            date_utils.parseDateKey(to),
+          );
+        },
+      ),
+    );
   }
 
   Future<List<DeviceCalendar>?> _pickDeviceCalendars(
@@ -1394,6 +1252,24 @@ class _CalendarHomeState extends State<CalendarHome>
 
   Future<void> _showCalendarConnections() async {
     final imports = context.read<ImportedEvents>();
+    if (useDesktopLayout) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _CalendarConnectionsSheet(
+          theme: Theme.of(context).brightness == Brightness.dark
+              ? darkTheme
+              : lightTheme,
+          imports: imports,
+          onConnect: (provider) async {
+            Navigator.of(dialogContext).pop();
+            await _connectCalendar(provider);
+          },
+          onDisconnect: (provider, calendar) =>
+              imports.disconnect(provider, calendar.id),
+        ),
+      );
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
@@ -1503,11 +1379,11 @@ class _CalendarHomeState extends State<CalendarHome>
       if (!mounted) return;
       await showCupertinoDialog<void>(
         context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
+        builder: (dialogContext) => AppDialog(
           title: const Text('가져올 일정이 없습니다'),
           content: const Text('선택한 기간에 새로 가져올 일정이 없습니다.'),
           actions: [
-            CupertinoDialogAction(
+            AppDialogAction(
               isDefaultAction: true,
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('확인'),
@@ -2313,6 +2189,7 @@ class _CalendarHomeState extends State<CalendarHome>
         ),
         imports: imported,
         onManageCalendars: _showCalendarConnections,
+        onAddSubscription: _showSubscriptionDialog,
         onSettings: () {
           _scaffoldKey.currentState?.closeDrawer();
           _openSettings();
@@ -2340,8 +2217,27 @@ class _CalendarHomeState extends State<CalendarHome>
                 onSettings: _openSettings,
                 eventEditorOpen: _eventSidePanel != null,
                 calendarControls: [_personalCalendarControls()],
+                subscriptionControls: [
+                  if (imported.sources.containsKey('kbo'))
+                    ImportedCalendarGroup(
+                      theme: theme,
+                      imports: imported,
+                      provider: 'kbo',
+                    ),
+                  ListTile(
+                    dense: true,
+                    leading: Icon(Icons.add, color: theme.textSecondary),
+                    title: const Text(
+                      '구독 추가하기',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    onTap: _showSubscriptionDialog,
+                  ),
+                ],
                 importedControls: [
-                  for (final source in imported.sources.entries)
+                  for (final source in imported.sources.entries.where(
+                    (source) => source.key != 'kbo',
+                  ))
                     ImportedCalendarGroup(
                       theme: theme,
                       imports: imported,
@@ -2476,7 +2372,9 @@ class _CalendarHomeState extends State<CalendarHome>
                         : Stack(
                             children: [
                               Positioned.fill(
-                                child: _animateView(_buildView(theme, expanded)),
+                                child: _animateView(
+                                  _buildView(theme, expanded),
+                                ),
                               ),
                               Positioned(
                                 right: 20,
@@ -2521,7 +2419,9 @@ class _CalendarHomeState extends State<CalendarHome>
       child: TweenAnimationBuilder<double>(
         key: ValueKey(_view),
         tween: Tween(begin: 0, end: 1),
-        duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 240),
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic,
         child: child,
         builder: (context, progress, child) => Opacity(
@@ -2788,6 +2688,7 @@ class _AccountDrawer extends StatelessWidget {
   final ValueChanged<bool> onSolarTermsChanged;
   final ImportedEvents imports;
   final VoidCallback onManageCalendars;
+  final VoidCallback onAddSubscription;
   final VoidCallback onSettings;
   const _AccountDrawer({
     required this.personalCalendars,
@@ -2803,6 +2704,7 @@ class _AccountDrawer extends StatelessWidget {
     required this.onSolarTermsChanged,
     required this.imports,
     required this.onManageCalendars,
+    required this.onAddSubscription,
     required this.onSettings,
   });
 
@@ -2877,13 +2779,30 @@ class _AccountDrawer extends StatelessWidget {
               const SizedBox(height: 6),
               personalCalendars,
               if (imports.sources.isNotEmpty) ...[
-                for (final entry in imports.sources.entries)
+                for (final entry in imports.sources.entries.where(
+                  (entry) => entry.key != 'kbo',
+                ))
                   ImportedCalendarGroup(
                     theme: theme,
                     imports: imports,
                     provider: entry.key,
                   ),
               ],
+              const SizedBox(height: 28),
+              _sectionTitle('구독'),
+              const SizedBox(height: 10),
+              if (imports.sources.containsKey('kbo'))
+                ImportedCalendarGroup(
+                  theme: theme,
+                  imports: imports,
+                  provider: 'kbo',
+                ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.add, color: theme.textSecondary),
+                title: const Text('구독 추가하기'),
+                onTap: onAddSubscription,
+              ),
               const SizedBox(height: 28),
               _sectionTitle('기능 표시'),
               const SizedBox(height: 10),
@@ -2985,6 +2904,85 @@ class _CalendarConnectionsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 6),
+        Text(
+          '외부 일정은 이 앱에서 읽기 전용으로 표시됩니다.',
+          style: TextStyle(color: theme.textSecondary, fontSize: 13),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '로그인한 계정과 다른 계정의 캘린더도 연결할 수 있어요.',
+          style: TextStyle(color: theme.textMuted, fontSize: 12),
+        ),
+        const SizedBox(height: 24),
+        // EventKit 채널은 iOS에만 있어 macOS에서는 기기 캘린더 연동을 숨긴다.
+        if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) ...[
+          _connectionSection('이 기기', [
+            _ConnectionInfo(
+              'apple',
+              'Apple 캘린더',
+              CupertinoIcons.calendar,
+              '기기에 등록된 캘린더 일정 가져오기',
+            ),
+            _ConnectionInfo(
+              'naver',
+              '네이버 캘린더',
+              CupertinoIcons.cloud,
+              'iPhone CalDAV에 등록된 네이버 일정',
+            ),
+          ]),
+          const SizedBox(height: 22),
+        ],
+        _connectionSection('계정 연결', [
+          _ConnectionInfo(
+            'google',
+            'Google 캘린더',
+            CupertinoIcons.globe,
+            'Google 계정에서 캘린더 선택',
+          ),
+          _ConnectionInfo(
+            'notion',
+            'Notion',
+            CupertinoIcons.doc_text,
+            '날짜 속성이 있는 데이터베이스 선택',
+          ),
+        ]),
+        if (imports.sources.isNotEmpty) ...[
+          const SizedBox(height: 22),
+          Text(
+            '연동된 캘린더',
+            style: TextStyle(
+              color: theme.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 9),
+          AnimatedBuilder(
+            animation: imports,
+            builder: (context, _) => Column(
+              children: [
+                for (final entry in imports.sources.entries)
+                  for (final calendar in entry.value)
+                    _connectedCalendarRow(context, entry.key, calendar),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+    if (useDesktopLayout) {
+      return AppDialog(
+        title: const Text('캘린더 연동'),
+        icon: CupertinoIcons.calendar,
+        maxWidth: 520,
+        content: content,
+      );
+    }
     return SafeArea(
       top: false,
       child: Container(
@@ -2993,101 +2991,23 @@ class _CalendarConnectionsSheet extends StatelessWidget {
         ),
         decoration: BoxDecoration(
           color: theme.bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppDialogStyle.radius),
+          ),
         ),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Center(
-              child: Container(
-                width: 34,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+            AppDialogHeader(
+              title: const Text('캘린더 연동'),
+              onClose: () => Navigator.pop(context),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: AppDialogStyle.bodyPadding,
+                child: content,
               ),
             ),
-            const SizedBox(height: 20),
-            Text(
-              '캘린더 연동',
-              style: TextStyle(
-                color: theme.text,
-                fontSize: 21,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '외부 일정은 이 앱에서 읽기 전용으로 표시됩니다.',
-              style: TextStyle(color: theme.textSecondary, fontSize: 13),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              '로그인한 계정과 다른 계정의 캘린더도 연결할 수 있어요.',
-              style: TextStyle(color: theme.textMuted, fontSize: 12),
-            ),
-            const SizedBox(height: 24),
-            // EventKit 채널은 iOS에만 있어 macOS에서는 기기 캘린더 연동을 숨긴다.
-            if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) ...[
-              _connectionSection('이 기기', [
-                _ConnectionInfo(
-                  'apple',
-                  'Apple 캘린더',
-                  CupertinoIcons.calendar,
-                  '기기에 등록된 캘린더 일정 가져오기',
-                ),
-                _ConnectionInfo(
-                  'naver',
-                  '네이버 캘린더',
-                  CupertinoIcons.cloud,
-                  'iPhone CalDAV에 등록된 네이버 일정',
-                ),
-              ]),
-              const SizedBox(height: 22),
-            ],
-            _connectionSection('계정 연결', [
-              _ConnectionInfo(
-                'google',
-                'Google 캘린더',
-                CupertinoIcons.globe,
-                'Google 계정에서 캘린더 선택',
-              ),
-              _ConnectionInfo(
-                'notion',
-                'Notion',
-                CupertinoIcons.doc_text,
-                '날짜 속성이 있는 데이터베이스 선택',
-              ),
-              _ConnectionInfo(
-                'kbo',
-                'KBO 야구',
-                CupertinoIcons.sportscourt,
-                'KIA·NC·KT·롯데·삼성·키움·LG·두산·한화 경기 일정',
-              ),
-            ]),
-            if (imports.sources.isNotEmpty) ...[
-              const SizedBox(height: 22),
-              Text(
-                '연동된 캘린더',
-                style: TextStyle(
-                  color: theme.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 9),
-              AnimatedBuilder(
-                animation: imports,
-                builder: (context, _) => Column(
-                  children: [
-                    for (final entry in imports.sources.entries)
-                      for (final calendar in entry.value)
-                        _connectedCalendarRow(context, entry.key, calendar),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -3242,15 +3162,15 @@ class _CalendarConnectionsSheet extends StatelessWidget {
   ) async {
     final remove = await showCupertinoDialog<bool>(
       context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
+      builder: (dialogContext) => AppDialog(
         title: const Text('연동 해제'),
         content: Text('${calendar.title} 캘린더 연동을 해제할까요?'),
         actions: [
-          CupertinoDialogAction(
+          AppDialogAction(
             onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('취소'),
           ),
-          CupertinoDialogAction(
+          AppDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('해제'),

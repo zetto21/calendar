@@ -1033,6 +1033,13 @@ class _EventBlockState extends State<_EventBlock> {
       cursor: SystemMouseCursors.resizeUpDown,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        // Trackpad pans scroll the calendar, even over a resize handle.
+        supportedDevices: const {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.invertedStylus,
+        },
         onVerticalDragUpdate: (d) => setState(() {
           if (top) {
             _topPx += d.delta.dy;
