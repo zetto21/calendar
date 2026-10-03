@@ -26,6 +26,11 @@ final class LiveActivityChannel {
       }
   }
 
+  private var scheduledStartSupported: Bool {
+    if #available(iOS 26.0, *) { return true }
+    return false
+  }
+
   @available(iOS 17.0, *)
   @MainActor private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) async {
     let activities = Activity<CalendarActivityAttributes>.activities
@@ -35,14 +40,18 @@ final class LiveActivityChannel {
         await activity.end(nil, dismissalPolicy: .immediate)
       }
       let active = Activity<CalendarActivityAttributes>.activities.filter {
-        $0.activityState == .active && $0.content.state.end > Date()
+        if $0.activityState == .active { return $0.content.state.end > Date() }
+        if #available(iOS 26.0, *), $0.activityState == .pending {
+          return $0.content.state.end > Date()
+        }
+        return false
       }
       result(["supported": true, "enabled": ActivityAuthorizationInfo().areActivitiesEnabled,
-              "eventIDs": active.map(\.attributes.eventID)])
+              "scheduledStartSupported": scheduledStartSupported, "eventIDs": active.map(\.attributes.eventID)])
     case "end":
       for activity in activities { await activity.end(nil, dismissalPolicy: .immediate) }
       result(nil)
-    case "start", "update":
+    case "start", "update", "schedule":
       guard let args = call.arguments as? [String: Any],
             let eventID = args["eventID"] as? String, !eventID.isEmpty,
             let title = args["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -53,13 +62,51 @@ final class LiveActivityChannel {
       }
       let start = Date(timeIntervalSince1970: startValue.doubleValue)
       let end = Date(timeIntervalSince1970: endValue.doubleValue)
-      guard start.addingTimeInterval(-600) <= Date(), end > Date(), end > start else {
+      let scheduling = call.method == "schedule"
+      guard end > Date(), end > start,
+            scheduling ? start > Date() : start.addingTimeInterval(-600) <= Date() else {
         result(FlutterError(code: "not_current", message: "현재 진행 중이거나 10분 안에 시작하는 시간 지정 일정만 표시할 수 있습니다.", details: nil)); return
       }
       let state = CalendarActivityAttributes.ContentState(title: String(title.prefix(120)), color: color, start: start, end: end)
       let content = ActivityContent(state: state, staleDate: end.addingTimeInterval(180))
       do {
-        if let existing = activities.first(where: { $0.attributes.eventID == eventID && $0.activityState == .active }) {
+        if scheduling {
+          guard #available(iOS 26.0, *) else {
+            result(FlutterError(code: "scheduled_start_unsupported", message: "예약 시작은 iOS 26 이상에서 사용할 수 있습니다.", details: nil)); return
+          }
+          guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            result(FlutterError(code: "disabled", message: "설정에서 이 앱의 실시간 현황을 허용해 주세요.", details: nil)); return
+          }
+          let existing = activities.first(where: {
+            $0.attributes.eventID == eventID && ($0.activityState == .pending || $0.activityState == .active)
+          })
+          var shouldRequest = true
+          if let existing {
+            if existing.activityState == .pending && existing.content.state.start != start {
+              await existing.end(nil, dismissalPolicy: .immediate)
+              shouldRequest = true
+            } else if existing.content.state != state {
+              await existing.update(content)
+              shouldRequest = false
+            } else {
+              shouldRequest = false
+            }
+          }
+          if shouldRequest {
+            _ = try Activity.request(
+              attributes: CalendarActivityAttributes(eventID: eventID),
+              content: content,
+              pushType: nil,
+              style: .standard,
+              alertConfiguration: AlertConfiguration(
+                title: "일정 시작",
+                body: "\(String(title.prefix(80))) 일정이 시작됩니다.",
+                sound: .default
+              ),
+              start: start
+            )
+          }
+        } else if let existing = activities.first(where: { $0.attributes.eventID == eventID && $0.activityState == .active }) {
           await existing.update(content)
         } else if call.method == "start" {
           guard ActivityAuthorizationInfo().areActivitiesEnabled else {

@@ -51,13 +51,13 @@ List<LiveCalendarEvent> currentLiveEvents(
   return current;
 }
 
-/// Returns events that may be shown in a Live Activity: an ongoing event or
-/// one beginning within the next ten minutes.
+/// Returns ongoing events and events beginning within [lookAhead].
 List<LiveCalendarEvent> liveActivityCandidates(
   EventMap events,
   tz.Location zone,
-  DateTime now,
-) {
+  DateTime now, {
+  Duration lookAhead = const Duration(minutes: 10),
+}) {
   final today = zonedParts(now, zone).date;
   final previous = zonedParts(now.subtract(const Duration(days: 7)), zone).date;
   final expanded = expandEvents(events, previous, today, zone);
@@ -73,8 +73,7 @@ List<LiveCalendarEvent> liveActivityCandidates(
       final end = event.endsAt != null
           ? DateTime.parse(event.endsAt!)
           : start.add(Duration(minutes: event.duration));
-      if (!now.isBefore(start.subtract(const Duration(minutes: 10))) &&
-          now.isBefore(end)) {
+      if (!now.isBefore(start.subtract(lookAhead)) && now.isBefore(end)) {
         candidates.add(LiveCalendarEvent(event, start, end));
       }
     } on FormatException {
@@ -106,27 +105,47 @@ class LiveActivity {
     if (isAndroid) await _channel.invokeMethod<void>('openSettings');
   }
 
-  static Future<({bool supported, bool enabled, List<String> eventIDs})>
+  static Future<
+    ({
+      bool supported,
+      bool enabled,
+      bool scheduledStartSupported,
+      List<String> eventIDs,
+    })
+  >
   status() async {
     if (!isSupportedPlatform) {
-      return (supported: false, enabled: false, eventIDs: const <String>[]);
+      return (
+        supported: false,
+        enabled: false,
+        scheduledStartSupported: false,
+        eventIDs: const <String>[],
+      );
     }
     try {
       final value = await _channel.invokeMapMethod<String, dynamic>('status');
       return (
         supported: value?['supported'] == true,
         enabled: value?['enabled'] == true,
+        scheduledStartSupported: value?['scheduledStartSupported'] == true,
         eventIDs: (value?['eventIDs'] as List<dynamic>? ?? const [])
             .whereType<String>()
             .toList(growable: false),
       );
     } on MissingPluginException {
-      return (supported: false, enabled: false, eventIDs: const <String>[]);
+      return (
+        supported: false,
+        enabled: false,
+        scheduledStartSupported: false,
+        eventIDs: const <String>[],
+      );
     }
   }
 
   static Future<void> start(LiveCalendarEvent event) =>
       _channel.invokeMethod('start', event.payload);
+  static Future<void> schedule(LiveCalendarEvent event) =>
+      _channel.invokeMethod('schedule', event.payload);
   static Future<void> update(LiveCalendarEvent event) =>
       _channel.invokeMethod('update', event.payload);
   static Future<void> end() async {

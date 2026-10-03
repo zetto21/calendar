@@ -139,12 +139,13 @@ class PersonalCalendars extends StatelessWidget {
               _showMenu(context, calendar, details.globalPosition),
           child: ListTile(
             dense: true,
-            contentPadding: const EdgeInsets.only(left: 12, right: 4),
             leading: calendar.id == 'personal'
                 ? Checkbox(
                     value: personalVisible,
                     activeColor: colorFromHex(calendar.color),
                     onChanged: (value) => onPersonalVisibilityChanged(value!),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   )
                 : Icon(
                     Icons.circle,

@@ -600,13 +600,16 @@ class _CalendarHomeState extends State<CalendarHome>
     DateTime.now(),
   );
 
-  List<LiveCalendarEvent> _liveActivityCandidates() => liveActivityCandidates(
+  List<LiveCalendarEvent> _liveActivityCandidates({
+    Duration lookAhead = const Duration(minutes: 10),
+  }) => liveActivityCandidates(
     _combineEvents(
       context.read<EventStore>().events,
       context.read<ImportedEvents>().events,
     ),
     widget.deviceZone,
     DateTime.now(),
+    lookAhead: lookAhead,
   );
 
   Future<void> _showLiveActivities() async {
@@ -893,7 +896,9 @@ class _CalendarHomeState extends State<CalendarHome>
     try {
       final status = await LiveActivity.status();
       if (!mounted) return;
-      final candidates = _liveActivityCandidates();
+      final candidates = LiveActivity.isIOS && status.scheduledStartSupported
+          ? _liveActivityCandidates(lookAhead: const Duration(hours: 24))
+          : _liveActivityCandidates();
       final activeIDs = status.eventIDs.toSet();
       if (LiveActivity.isAndroid || LiveActivity.isMacOS) {
         // Android and macOS track only the event explicitly selected by the
@@ -909,7 +914,11 @@ class _CalendarHomeState extends State<CalendarHome>
         return;
       }
       for (final event in candidates) {
-        if (activeIDs.contains(event.id)) {
+        if (LiveActivity.isIOS &&
+            status.scheduledStartSupported &&
+            event.start.isAfter(DateTime.now())) {
+          await LiveActivity.schedule(event);
+        } else if (activeIDs.contains(event.id)) {
           await LiveActivity.update(event);
         } else {
           await LiveActivity.start(event);
@@ -2798,9 +2807,14 @@ class _AccountDrawer extends StatelessWidget {
                   provider: 'kbo',
                 ),
               ListTile(
+                dense: true,
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.add, color: theme.textSecondary),
-                title: const Text('구독 추가하기'),
+                leading: Icon(
+                  Icons.add,
+                  size: 20,
+                  color: theme.textSecondary,
+                ),
+                title: const Text('구독 추가하기', style: TextStyle(fontSize: 13)),
                 onTap: onAddSubscription,
               ),
               const SizedBox(height: 28),

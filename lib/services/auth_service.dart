@@ -157,12 +157,13 @@ class AuthService {
     }
   }
 
-  /// Same `http://localhost:3001` default as calendar_app/.env.example.
+
+  /// Same `https://api.ilsngcal.com` default as calendar_app/.env.example.
   /// Override at build/run time with `--dart-define=API_BASE_URL=...` (a LAN
   /// IP) when testing on a physical device.
   static const _configuredBase = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3001',
+    defaultValue: 'https://api.ilsangcal.com/',
   );
 
   static String get apiBase {
@@ -412,6 +413,30 @@ class AuthService {
     if (!kIsWeb) return base;
     // The server sends the login result back to this page's own origin.
     return '$base?client=web&return=${Uri.encodeQueryComponent(Uri.base.origin)}';
+  }
+
+  /// iOS/macOS system Sign in with Apple: the server verifies the identity
+  /// token against the app's bundle ID and the one-time [nonce].
+  Future<AuthUser> signInWithAppleNative({
+    required String identityToken,
+    required String nonce,
+    String? name,
+  }) async {
+    final result = await _request(
+      '/api/auth/oauth/apple/native',
+      (json) => (
+        token: json!['token'] as String,
+        user: AuthUser.fromJson(json['user'] as Map<String, dynamic>),
+      ),
+      method: 'POST',
+      body: {
+        'identityToken': identityToken,
+        'nonce': nonce,
+        if (name != null && name.isNotEmpty) 'name': name,
+      },
+    );
+    await _saveSession(result.token, result.user);
+    return result.user;
   }
 
   Future<AuthUser> exchangeSocialCode(String code) async {

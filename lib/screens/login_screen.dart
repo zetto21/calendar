@@ -1,9 +1,14 @@
 import '../widgets/app_dialog.dart';
+import 'dart:convert' show base64Url, utf8;
+import 'dart:math' show Random;
+
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
@@ -125,6 +130,51 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
+  /// iOS and macOS use the system Sign in with Apple sheet instead of a
+  /// browser; other platforms keep the server's web OAuth flow.
+  bool get _useNativeAppleSignIn =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
+  /// Returns null when the user dismisses the Apple sheet.
+  Future<AuthUser?> _nativeAppleLogin() async {
+    final random = Random.secure();
+    final rawNonce = base64Url
+        .encode(List<int>.generate(32, (_) => random.nextInt(256)))
+        .replaceAll('=', '');
+    final AuthorizationCredentialAppleID credential;
+    try {
+      credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: sha256.convert(utf8.encode(rawNonce)).toString(),
+      );
+    } on SignInWithAppleAuthorizationException catch (error) {
+      if (error.code == AuthorizationErrorCode.canceled) return null;
+      throw AuthException('Apple 로그인에 실패했습니다.');
+    }
+    final identityToken = credential.identityToken;
+    if (identityToken == null) {
+      throw AuthException('Apple 인증 정보를 받지 못했습니다.');
+    }
+    // Apple only shares the name on the very first authorization. Korean
+    // names read family-first without a space ("홍길동"), others "John Smith".
+    final family = credential.familyName?.trim() ?? '';
+    final given = credential.givenName?.trim() ?? '';
+    final korean = RegExp(r'[가-힣]').hasMatch(family + given);
+    final name = korean
+        ? '$family$given'
+        : [given, family].where((part) => part.isNotEmpty).join(' ');
+    return AuthService.instance.signInWithAppleNative(
+      identityToken: identityToken,
+      nonce: rawNonce,
+      name: name,
+    );
+  }
+
   Future<void> _socialLogin(SocialProvider provider) async {
     if (_socialBusy != null || !_enabledProviders.contains(provider)) return;
     setState(() {
@@ -132,6 +182,12 @@ class _LoginScreenState extends State<LoginScreen>
       _message = '';
     });
     try {
+      if (provider == SocialProvider.apple && _useNativeAppleSignIn) {
+        final user = await _nativeAppleLogin();
+        if (user == null || !mounted) return;
+        widget.onAuthenticated(user);
+        return;
+      }
       final result = await FlutterWebAuth2.authenticate(
         url: AuthService.instance.socialLoginStartURL(provider),
         callbackUrlScheme: 'calendar',
@@ -567,51 +623,96 @@ class _LoginScreenState extends State<LoginScreen>
       ),
       body: SafeArea(
         child: LayoutBuilder(
-          builder: (context, viewport) => Padding(
-            padding: const EdgeInsets.fromLTRB(32, 24, 32, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (desktop) ...[
-                  const Spacer(),
-                  Text(
-                    '로그인',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: CupertinoColors.label.resolveFrom(context),
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.8,
+          builder: (context, viewport) {
+            // Short, square-ish screens (e.g. foldables like iPhone Duo)
+            // don't have room for the tall Spacer-based layout below.
+            final compact = viewport.maxHeight < 700;
+            final buttons = [
+              _enter(
+                order: 1,
+                child: _buildOptionButton(
+                  label: '이메일로 계속 진행',
+                  icon: Icon(
+                    CupertinoIcons.envelope,
+                    color: blue,
+                    size: 27,
+                  ),
+                  color: blue.withValues(alpha: 0.16),
+                  foregroundColor: blue,
+                  onPressed: _isAuthenticating
+                      ? null
+                      : () => setState(() => _emailFormVisible = true),
+                ),
+              ),
+              SizedBox(height: compact ? 10 : 14),
+              _enter(
+                order: 2,
+                child: isAndroid ? googleButton : appleButton,
+              ),
+              SizedBox(height: compact ? 10 : 14),
+              _enter(
+                order: 3,
+                child: isAndroid ? appleButton : googleButton,
+              ),
+              SizedBox(height: compact ? 14 : 20),
+              _enter(order: 4, child: _buildOtherSocialSection()),
+            ];
+            if (compact && !desktop) {
+              return SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(32, 20, 32, 16),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: (viewport.maxHeight - 36).clamp(
+                      0,
+                      double.infinity,
                     ),
                   ),
-                  const SizedBox(height: 32),
-                ] else ...[
-                  const Spacer(flex: 5),
-                  _enter(order: 0, child: _buildBrandHero(context)),
-                  const Spacer(flex: 6),
-                ],
-                _enter(
-                  order: 1,
-                  child: _buildOptionButton(
-                    label: '이메일로 계속 진행',
-                    icon: Icon(CupertinoIcons.envelope, color: blue, size: 27),
-                    color: blue.withValues(alpha: 0.16),
-                    foregroundColor: blue,
-                    onPressed: _isAuthenticating
-                        ? null
-                        : () => setState(() => _emailFormVisible = true),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _enter(
+                          order: 0,
+                          child: _buildBrandHero(context, compact: true),
+                        ),
+                        const SizedBox(height: 18),
+                        ...buttons,
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 14),
-                _enter(order: 2, child: isAndroid ? googleButton : appleButton),
-                const SizedBox(height: 14),
-                _enter(order: 3, child: isAndroid ? appleButton : googleButton),
-                const SizedBox(height: 20),
-                _enter(order: 4, child: _buildOtherSocialSection()),
-                if (desktop) const Spacer(),
-              ],
-            ),
-          ),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(32, 24, 32, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (desktop) ...[
+                    const Spacer(),
+                    Text(
+                      '로그인',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: CupertinoColors.label.resolveFrom(context),
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                  ] else ...[
+                    const Spacer(flex: 5),
+                    _enter(order: 0, child: _buildBrandHero(context)),
+                    const Spacer(flex: 6),
+                  ],
+                  ...buttons,
+                  if (desktop) const Spacer(),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -644,33 +745,34 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildBrandHero(BuildContext context) {
+  Widget _buildBrandHero(BuildContext context, {bool compact = false}) {
+    final logoSize = compact ? 76.0 : 112.0;
     return Column(
       children: [
         SizedBox(
-          width: 112,
-          height: 112,
+          width: logoSize,
+          height: logoSize,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(compact ? 20 : 28),
             child: Image.asset('assets/login/app-icon.png', fit: BoxFit.cover),
           ),
         ),
-        const SizedBox(height: 26),
+        SizedBox(height: compact ? 16 : 26),
         Text(
           '일상 캘린더',
           style: TextStyle(
             color: CupertinoColors.label.resolveFrom(context),
-            fontSize: 32,
+            fontSize: compact ? 26 : 32,
             fontWeight: FontWeight.w700,
             letterSpacing: -1.1,
           ),
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: compact ? 8 : 14),
         Text(
           '나의 하루를 차곡차곡',
           style: TextStyle(
             color: CupertinoColors.secondaryLabel.resolveFrom(context),
-            fontSize: 17,
+            fontSize: compact ? 15 : 17,
           ),
         ),
       ],
