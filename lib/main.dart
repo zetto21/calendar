@@ -489,8 +489,7 @@ class _CalendarHomeState extends State<CalendarHome>
 
   String _calendarProviderName(String provider) => switch (provider) {
     'google' => 'Google 캘린더',
-    'apple' => 'Apple 캘린더',
-    'naver' => '네이버 캘린더',
+    'device' => '기기 캘린더',
     'notion' => 'Notion',
     'kbo' => 'KBO 야구',
     _ => provider,
@@ -1095,9 +1094,9 @@ class _CalendarHomeState extends State<CalendarHome>
   Future<void> _connectCalendar(String provider) async {
     final importedEvents = context.read<ImportedEvents>();
     try {
-      if (provider == 'apple' || provider == 'naver') {
+      if (provider == 'device') {
         if (!await EventKit.requestAccess()) {
-          throw AuthException('Apple 캘린더 접근을 허용해 주세요.');
+          throw AuthException('기기 캘린더 접근을 허용해 주세요.');
         }
         final deviceCalendars = await EventKit.fetchCalendars();
         final selectedCalendars = await _pickDeviceCalendars(deviceCalendars);
@@ -1117,8 +1116,7 @@ class _CalendarHomeState extends State<CalendarHome>
               id: 'import:$provider:${event.systemEventId ?? event.id}',
               systemCalendarId:
                   '$provider|${event.systemCalendarId ?? selectedCalendars.first.id}',
-              description:
-                  '${provider == 'naver' ? '네이버/CalDAV' : 'Apple'} · 읽기 전용',
+              description: '기기 캘린더 · 읽기 전용',
             ),
           );
         }
@@ -1136,13 +1134,6 @@ class _CalendarHomeState extends State<CalendarHome>
               .toList(),
         );
         importedEvents.replaceProvider(provider, imported);
-        if (mounted && provider == 'naver') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('iPhone 설정에 추가된 네이버 CalDAV 일정을 가져왔습니다.'),
-            ),
-          );
-        }
         return;
       }
       if (provider == 'kbo') {
@@ -2937,16 +2928,10 @@ class _CalendarConnectionsSheet extends StatelessWidget {
         if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) ...[
           _connectionSection('이 기기', [
             _ConnectionInfo(
-              'apple',
-              'Apple 캘린더',
+              'device',
+              '기기 캘린더',
               CupertinoIcons.calendar,
-              '기기에 등록된 캘린더 일정 가져오기',
-            ),
-            _ConnectionInfo(
-              'naver',
-              '네이버 캘린더',
-              CupertinoIcons.cloud,
-              'iPhone CalDAV에 등록된 네이버 일정',
+              'Apple·네이버 등 기기에 등록된 캘린더 일정 가져오기',
             ),
           ]),
           const SizedBox(height: 22),

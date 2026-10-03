@@ -39,22 +39,33 @@ class ImportedEvents extends ChangeNotifier {
     if (raw == null) return;
     try {
       final saved = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      var migratedDeviceSources = false;
       for (final entry in saved.entries) {
         // 톡캘린더 연동은 제거되어, 저장된 목록도 불러오지 않는다.
         if (entry.key == 'kakao') continue;
-        _sources[entry.key] = (entry.value as List)
+        // Apple·네이버 기기 캘린더 연동은 '기기에서 가져오기' 하나로 통합되었다.
+        final key = _migrateDeviceProviderKey(entry.key);
+        if (key != entry.key) migratedDeviceSources = true;
+        final calendars = (entry.value as List)
             .map(
               (value) => ImportCalendar.fromJson(
                 Map<String, dynamic>.from(value as Map),
               ),
             )
             .toList();
+        final existing = _sources[key];
+        if (existing == null) {
+          _sources[key] = calendars;
+        } else {
+          final seenIds = existing.map((calendar) => calendar.id).toSet();
+          existing.addAll(calendars.where((calendar) => seenIds.add(calendar.id)));
+        }
       }
       final visibility = await AccountPreferences.instance.get(_visibilityKey);
       if (visibility != null) {
         _visibility.addAll(
           Map<String, dynamic>.from(jsonDecode(visibility as String) as Map)
-              .map((key, value) => MapEntry(key, value as bool)),
+              .map((key, value) => MapEntry(_migrateDeviceVisibilityKey(key), value as bool)),
         );
       }
       final excluded = await AccountPreferences.instance.get(
@@ -67,9 +78,29 @@ class ImportedEvents extends ChangeNotifier {
           ),
         );
       }
+      if (migratedDeviceSources) {
+        await _persistSources();
+        await AccountPreferences.instance.set(
+          _visibilityKey,
+          jsonEncode(_visibility),
+        );
+      }
     } catch (_) {
       _sources.clear();
     }
+  }
+
+  /// Apple/네이버 기기 캘린더는 과거에 별도 provider로 저장되었지만, 이제는
+  /// 하나의 '기기에서 가져오기'(`device`) 연동으로 합쳐졌다.
+  static String _migrateDeviceProviderKey(String provider) =>
+      provider == 'apple' || provider == 'naver' ? 'device' : provider;
+
+  static String _migrateDeviceVisibilityKey(String key) {
+    final separator = key.indexOf('|');
+    if (separator == -1) return key;
+    final provider = key.substring(0, separator);
+    if (provider != 'apple' && provider != 'naver') return key;
+    return 'device${key.substring(separator)}';
   }
 
   String eventKey(String provider, String calendarId, String eventId) =>

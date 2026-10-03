@@ -23,8 +23,7 @@ class ImportedCalendarGroup extends StatelessWidget {
   String get label => switch (provider) {
     'kakao' => '톡캘린더',
     'google' => 'Google 캘린더',
-    'apple' => 'Apple 캘린더',
-    'naver' => '네이버 캘린더',
+    'device' => '기기 캘린더',
     'notion' => 'Notion',
     'kbo' => 'KBO 야구',
     _ => provider,
