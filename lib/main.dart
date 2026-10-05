@@ -57,6 +57,7 @@ import 'widgets/imported_calendar_group.dart';
 import 'widgets/subscription_dialog.dart';
 import 'widgets/liquid_glass.dart';
 import 'widgets/server_connection_monitor.dart';
+import 'widgets/consent_gate.dart';
 import 'platform.dart';
 
 Future<void> main() async {
@@ -116,9 +117,10 @@ class CalendarApp extends StatelessWidget {
           child: child!,
         );
       },
-      // Place this below MaterialApp so its dialog uses the root Navigator,
-      // and above AuthGate so it also covers the login and consent flow.
-      home: ServerConnectionMonitor(child: AuthGate(deviceZone: deviceZone)),
+      // First-run consent precedes login, session restoration and API probes.
+      home: ConsentGate(
+        child: ServerConnectionMonitor(child: AuthGate(deviceZone: deviceZone)),
+      ),
     );
   }
 }
@@ -2149,7 +2151,7 @@ class _CalendarHomeState extends State<CalendarHome>
     if (!_sync.isSupported) return;
     if (!await EventKit.isAvailable()) return;
     if (!currentAccount()) return;
-    if (!await EventKit.requestAccess()) return;
+    if (!await EventKit.hasAccess()) return;
     if (!currentAccount()) return;
     if (event.systemEventId != null) {
       await EventKit.updateEvent(event);

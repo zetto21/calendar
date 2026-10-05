@@ -1,4 +1,4 @@
-import '../widgets/app_dialog.dart';
+import '../widgets/login_failure_dialog.dart';
 
 import 'dart:convert' show base64Url, utf8;
 import 'dart:math' show Random;
@@ -115,17 +115,7 @@ class _LoginScreenState extends State<LoginScreen>
     try {
       await showCupertinoDialog<void>(
         context: context,
-        builder: (dialogContext) => AppDialog(
-          title: const Text('로그인 실패'),
-          content: Text(message),
-          actions: [
-            AppDialogAction(
-              isDefaultAction: true,
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('확인'),
-            ),
-          ],
-        ),
+        builder: (dialogContext) => LoginFailureDialog(message: message),
       );
     } finally {
       _loginAlertVisible = false;

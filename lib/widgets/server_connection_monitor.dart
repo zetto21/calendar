@@ -32,6 +32,7 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
   bool _checking = false;
   bool _foreground = true;
   bool? _lastAvailability;
+  int _consecutiveFailures = 0;
   bool _connectionAlertVisible = false;
   Route<bool>? _connectionRoute;
 
@@ -120,7 +121,7 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(
-      Duration(seconds: _quiet ? 5 : 1),
+      const Duration(seconds: 10),
       (_) => _checkConnection(),
     );
   }
@@ -132,6 +133,7 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
       _startTimer();
       _checkConnection();
     } else {
+      _consecutiveFailures = 0;
       _timer?.cancel();
       _timer = null;
     }
@@ -144,8 +146,9 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
       final connected =
           await (widget.checkConnection ??
               AuthService.instance.checkConnection)();
-      if (!mounted) return;
+      if (!mounted || !_foreground) return;
       if (!connected) throw ServerConnectionException();
+      _consecutiveFailures = 0;
       _lastAvailability = true;
       ServerConnectionMonitor.available.value = true;
       if (!mounted) return;
@@ -154,7 +157,9 @@ class _ServerConnectionMonitorState extends State<ServerConnectionMonitor>
       final route = _connectionRoute;
       if (route != null && route.isActive) route.navigator?.removeRoute(route);
     } on ServerConnectionException {
-      if (!mounted) return;
+      if (!mounted || !_foreground) return;
+      // A delayed probe or a brief network switch is not a confirmed outage.
+      if (++_consecutiveFailures < 3) return;
       final wasConnected = _lastAvailability != false;
       _lastAvailability = false;
       ServerConnectionMonitor.available.value = false;

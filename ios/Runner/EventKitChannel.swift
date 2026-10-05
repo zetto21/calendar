@@ -41,6 +41,8 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
       result(true)
     case "requestAccess":
       requestAccess(result: result)
+    case "hasAccess":
+      result(hasCalendarAccess())
     case "presentEventEditor":
       presentEventEditor(args, result: result)
     case "createEvent":

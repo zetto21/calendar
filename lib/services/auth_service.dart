@@ -279,7 +279,7 @@ class AuthService {
   /// Closing this dedicated client also cancels a request that times out.
   Future<bool> checkConnection({
     http.Client? client,
-    Duration timeout = const Duration(seconds: 2),
+    Duration timeout = const Duration(seconds: 5),
   }) async {
     final probe = client ?? http.Client();
     try {

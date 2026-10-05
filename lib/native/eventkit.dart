@@ -64,6 +64,17 @@ class EventKit {
     }
   }
 
+  /// Checks existing permission without showing a system permission prompt.
+  static Future<bool> hasAccess() async {
+    try {
+      return await _channel.invokeMethod<bool>('hasAccess') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// Creates the event in the default EventKit calendar. Returns the new
   /// EKEvent identifier (to store as CalendarEvent.systemEventId), or null on failure.
   static Future<String?> createEvent(CalendarEvent event) async {

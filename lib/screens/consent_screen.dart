@@ -1,4 +1,5 @@
 import '../widgets/app_dialog.dart';
+
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,7 +12,11 @@ class ConsentScreen extends StatefulWidget {
   final AppTheme theme;
   final VoidCallback onAccepted;
 
-  const ConsentScreen({super.key, required this.theme, required this.onAccepted});
+  const ConsentScreen({
+    super.key,
+    required this.theme,
+    required this.onAccepted,
+  });
 
   @override
   State<ConsentScreen> createState() => _ConsentScreenState();
@@ -27,17 +32,21 @@ class _ConsentScreenState extends State<ConsentScreen> {
   bool get _all => _required && _marketing;
 
   void _showDocument(String title) {
-    Navigator.of(context).push(CupertinoPageRoute<void>(
-      builder: (context) => CupertinoPageScaffold(
-        navigationBar: CupertinoNavigationBar(middle: Text(title)),
-        child: const SafeArea(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(24),
-            child: Text('문서가 아직 등록되지 않았습니다.'),
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (context) => CupertinoPageScaffold(
+          navigationBar: CupertinoNavigationBar(middle: Text(title)),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                '$title 문서를 준비하고 있습니다.\n정식 서비스 출시 전에 상세 내용을 안내할 예정입니다.',
+              ),
+            ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   Future<void> _continue() async {
@@ -45,8 +54,13 @@ class _ConsentScreenState extends State<ConsentScreen> {
     setState(() => _saving = true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      final marketingSaved = await prefs.setBool(ConsentScreen.marketingStorageKey, _marketing);
-      if (!marketingSaved) throw StateError('Marketing preference was not saved');
+      final marketingSaved = await prefs.setBool(
+        ConsentScreen.marketingStorageKey,
+        _marketing,
+      );
+      if (!marketingSaved) {
+        throw StateError('Marketing preference was not saved');
+      }
       final saved = await prefs.setString(
         ConsentScreen.storageKey,
         DateTime.now().toUtc().toIso8601String(),
@@ -73,8 +87,13 @@ class _ConsentScreenState extends State<ConsentScreen> {
     }
   }
 
-  Widget _item(String title, bool value, ValueChanged<bool> change,
-      {bool document = false, bool all = false}) {
+  Widget _item(
+    String title,
+    bool value,
+    ValueChanged<bool> change, {
+    bool document = false,
+    bool all = false,
+  }) {
     final blue = CupertinoColors.activeBlue.resolveFrom(context);
     return Row(
       children: [
@@ -84,7 +103,9 @@ class _ConsentScreenState extends State<ConsentScreen> {
             value: value,
             activeColor: blue,
             semanticLabel: title,
-            onChanged: _saving ? null : (checked) => setState(() => change(checked ?? false)),
+            onChanged: _saving
+                ? null
+                : (checked) => setState(() => change(checked ?? false)),
           ),
         ),
         Expanded(
@@ -92,12 +113,14 @@ class _ConsentScreenState extends State<ConsentScreen> {
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 18),
             onPressed: _saving ? null : () => setState(() => change(!value)),
-            child: Text(title,
-                style: TextStyle(
-                  color: CupertinoColors.label.resolveFrom(context),
-                  fontSize: 16,
-                  fontWeight: all ? FontWeight.w600 : FontWeight.w400,
-                )),
+            child: Text(
+              title,
+              style: TextStyle(
+                color: CupertinoColors.label.resolveFrom(context),
+                fontSize: 16,
+                fontWeight: all ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
           ),
         ),
         if (document)
@@ -106,8 +129,11 @@ class _ConsentScreenState extends State<ConsentScreen> {
             onPressed: () => _showDocument(title.replaceFirst('[필수] ', '')),
             child: Semantics(
               label: '$title 보기',
-              child: Icon(CupertinoIcons.chevron_forward,
-                  size: 16, color: CupertinoColors.tertiaryLabel.resolveFrom(context)),
+              child: Icon(
+                CupertinoIcons.chevron_forward,
+                size: 16,
+                color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+              ),
             ),
           ),
       ],
@@ -122,7 +148,10 @@ class _ConsentScreenState extends State<ConsentScreen> {
 
   Widget _separator() => Padding(
     padding: const EdgeInsets.only(left: 55),
-    child: Container(height: 0.5, color: CupertinoColors.separator.resolveFrom(context)),
+    child: Container(
+      height: 0.5,
+      color: CupertinoColors.separator.resolveFrom(context),
+    ),
   );
 
   @override
@@ -136,77 +165,146 @@ class _ConsentScreenState extends State<ConsentScreen> {
         decoration: TextDecoration.none,
       ),
       child: CupertinoPageScaffold(
-        backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(context),
+        backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
+          context,
+        ),
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
-              child: LayoutBuilder(builder: (context, constraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: (constraints.maxHeight - 56).clamp(0, double.infinity)),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('이용 전에\n확인해 주세요', textAlign: TextAlign.center,
-                                style: TextStyle(color: CupertinoColors.label.resolveFrom(context),
-                                    fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: -0.8, height: 1.2)),
-                            const SizedBox(height: 14),
-                            Text('일상 캘린더를 시작하기 위해\n아래 필수 항목에 동의해 주세요.', textAlign: TextAlign.center,
-                                style: TextStyle(color: CupertinoColors.secondaryLabel.resolveFrom(context), fontSize: 16, height: 1.5)),
-                            const SizedBox(height: 32),
-                            _card([_item('모두 동의합니다', _all, (value) {
-                              _age = _terms = _privacy = _marketing = value;
-                            }, all: true)]),
-                            const SizedBox(height: 20),
-                            _card([
-                              _item('[필수] 만 14세 이상입니다', _age, (value) => _age = value),
-                              _separator(),
-                              _item('[필수] 이용약관 동의', _terms, (value) => _terms = value, document: true),
-                              _separator(),
-                              _item('[필수] 개인정보처리방침 동의', _privacy, (value) => _privacy = value, document: true),
-                              _separator(),
-                              _item('[선택] 광고성 정보 수신 동의', _marketing, (value) => _marketing = value),
-                            ]),
-                            const SizedBox(height: 10),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Text('선택 항목에 동의하지 않아도 서비스를 이용할 수 있습니다.',
-                                  style: TextStyle(color: CupertinoColors.secondaryLabel.resolveFrom(context), fontSize: 12, height: 1.4)),
-                            ),
-                          ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: (constraints.maxHeight - 56).clamp(
+                          0,
+                          double.infinity,
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 32),
-                          child: LiquidGlass(
-                            useNative: false,
-                            radius: 18,
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: CupertinoButton(
-                            color: _required ? blue.withValues(alpha: 0.16) : null,
-                            key: const ValueKey('consentContinue'),
-                            borderRadius: BorderRadius.circular(14),
-                            padding: const EdgeInsets.symmetric(vertical: 17),
-                            onPressed: _required && !_saving ? _continue : null,
-                            child: Text(_saving ? '저장 중…' : '동의하고 계속하기',
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                '이용 전에\n확인해 주세요',
+                                textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: _required && !_saving ? blue : CupertinoColors.secondaryLabel.resolveFrom(context),
-                                  fontSize: 17, fontWeight: FontWeight.w600)),
+                                  color: CupertinoColors.label.resolveFrom(
+                                    context,
+                                  ),
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.8,
+                                  height: 1.2,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                '일상 캘린더를 시작하기 위해\n아래 필수 항목에 동의해 주세요.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: CupertinoColors.secondaryLabel
+                                      .resolveFrom(context),
+                                  fontSize: 16,
+                                  height: 1.5,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              _card([
+                                _item('모두 동의합니다', _all, (value) {
+                                  _age = _terms = _privacy = _marketing = value;
+                                }, all: true),
+                              ]),
+                              const SizedBox(height: 20),
+                              _card([
+                                _item(
+                                  '[필수] 만 14세 이상입니다',
+                                  _age,
+                                  (value) => _age = value,
+                                ),
+                                _separator(),
+                                _item(
+                                  '[필수] 이용약관 동의',
+                                  _terms,
+                                  (value) => _terms = value,
+                                  document: true,
+                                ),
+                                _separator(),
+                                _item(
+                                  '[필수] 개인정보처리방침 동의',
+                                  _privacy,
+                                  (value) => _privacy = value,
+                                  document: true,
+                                ),
+                                _separator(),
+                                _item(
+                                  '[선택] 광고성 정보 수신 동의',
+                                  _marketing,
+                                  (value) => _marketing = value,
+                                ),
+                              ]),
+                              const SizedBox(height: 10),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: Text(
+                                  '선택 항목에 동의하지 않아도 서비스를 이용할 수 있습니다.',
+                                  style: TextStyle(
+                                    color: CupertinoColors.secondaryLabel
+                                        .resolveFrom(context),
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 32),
+                            child: LiquidGlass(
+                              useNative: false,
+                              radius: 18,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: CupertinoButton(
+                                  color: _required
+                                      ? blue.withValues(alpha: 0.16)
+                                      : null,
+                                  key: const ValueKey('consentContinue'),
+                                  borderRadius: BorderRadius.circular(14),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 17,
+                                  ),
+                                  onPressed: _required && !_saving
+                                      ? _continue
+                                      : null,
+                                  child: Text(
+                                    _saving ? '저장 중…' : '동의하고 계속하기',
+                                    style: TextStyle(
+                                      color: _required && !_saving
+                                          ? blue
+                                          : CupertinoColors.secondaryLabel
+                                                .resolveFrom(context),
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                },
+              ),
             ),
           ),
         ),
