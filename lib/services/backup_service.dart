@@ -1,44 +1,71 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/calendar_event.dart';
+import '../storage/account_preferences.dart';
 import '../storage/display_settings.dart';
 import '../storage/event_store.dart';
 
 class BackupService {
   BackupService._();
   static const _exportChannel = MethodChannel('calendar_app/file_export');
+  static const maxImportBytes = 8 * 1024 * 1024;
+  static const _maxExportBytes = 20 * 1024 * 1024;
 
   /// Creates the portable files before presenting the system save picker.
   static Future<List<String>> exportData(
     EventStore events, {
     ValueChanged<double>? onProgress,
   }) async {
+    final generation = events.accountGeneration;
+    final rawEvents = events.exportBackup()['events'] as List<dynamic>;
     onProgress?.call(0.05);
     await Future<void>.delayed(const Duration(milliseconds: 180));
-    final rawEvents = events.exportBackup()['events'] as List<dynamic>;
+    if (generation != events.accountGeneration) {
+      throw StateError('계정이 변경되었습니다. 다시 시도해 주세요.');
+    }
     final calendarEvents = rawEvents
         .map(
           (value) =>
               CalendarEvent.fromJson(Map<String, dynamic>.from(value as Map)),
         )
         .toList();
-    final directory = await getApplicationDocumentsDirectory();
+    final temporary = await getTemporaryDirectory();
+    final parent = await Directory('${temporary.path}/calendar-exports')
+        .create(recursive: true);
+    final directory = await parent.createTemp('backup-');
     final date = DateTime.now().toIso8601String().substring(0, 10);
     final icsFile = File('${directory.path}/calendar-backup-$date.ics');
     final csvFile = File('${directory.path}/calendar-backup-$date.csv');
-    await icsFile.writeAsString(_toIcs(calendarEvents));
-    onProgress?.call(0.50);
-    await Future<void>.delayed(const Duration(milliseconds: 180));
-    await csvFile.writeAsString(_toCsv(calendarEvents));
-    onProgress?.call(0.90);
-    await Future<void>.delayed(const Duration(milliseconds: 180));
-    onProgress?.call(1.0);
-    return [icsFile.path, csvFile.path];
+    final ics = _toIcs(calendarEvents);
+    final csv = _toCsv(calendarEvents);
+    if (utf8.encode(ics).length > _maxExportBytes ||
+        utf8.encode(csv).length > _maxExportBytes) {
+      await directory.delete(recursive: true);
+      throw const FormatException('내보낼 백업 파일이 너무 큽니다.');
+    }
+    try {
+      await icsFile.writeAsString(ics);
+      onProgress?.call(0.50);
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+      await csvFile.writeAsString(csv);
+      onProgress?.call(0.90);
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+      if (generation != events.accountGeneration) {
+        throw StateError('계정이 변경되었습니다. 다시 시도해 주세요.');
+      }
+      onProgress?.call(1.0);
+      return [icsFile.path, csvFile.path];
+    } catch (_) {
+      await directory.delete(recursive: true);
+      rethrow;
+    }
   }
 
   /// Opens Files only after Flutter's progress alert is gone.
@@ -94,6 +121,7 @@ class BackupService {
         'location',
         'description',
         'url',
+        'textEncoding',
       ],
       ...events.map(
         (event) => [
@@ -106,6 +134,7 @@ class BackupService {
           event.location ?? '',
           event.description ?? '',
           event.url ?? '',
+          'apostrophe-v1',
         ],
       ),
     ];
@@ -133,29 +162,84 @@ class BackupService {
       .replaceAll('\\', '\\\\')
       .replaceAll(';', '\\;')
       .replaceAll(',', '\\,')
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
       .replaceAll('\n', '\\n');
-  static String _escapeCsv(String value) => '"${value.replaceAll('"', '""')}"';
+  static bool _isSpreadsheetFormula(String value) =>
+      RegExp(r'^[\s\x00-\x1f]*[=+\-@]').hasMatch(value) ||
+      value.startsWith('\t') ||
+      value.startsWith('\r') ||
+      value.startsWith('\n');
+  static String _escapeCsv(String value) {
+    final safe = _isSpreadsheetFormula(value) ? "'$value" : value;
+    return '"${safe.replaceAll('"', '""')}"';
+  }
+
+  @visibleForTesting
+  static String encodeCsv(List<CalendarEvent> events) => _toCsv(events);
+
+  @visibleForTesting
+  static String encodeIcs(List<CalendarEvent> events) => _toIcs(events);
 
   static Future<bool> restoreData(EventStore events) async {
-    final picked = await FilePicker.pickFiles(
+    final generation = events.accountGeneration;
+    final selected = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['ics', 'csv', 'json'],
     );
-    if (picked.isEmpty) return false;
-    final selected = picked.single;
-    final bytes = await selected.readAsBytes();
-    final content = utf8.decode(bytes, allowMalformed: true);
-    final extension =
-        (selected.extension ?? selected.name.split('.').last).toLowerCase();
+    if (selected == null) return false;
+    final length = selected.lengthSync();
+    if (length != null && length > maxImportBytes) {
+      throw const FormatException('백업 파일은 8MB까지 복원할 수 있습니다.');
+    }
+    final bytes = await readBackupBytes(selected.readAsByteStream());
+    final content = utf8.decode(bytes);
+    final extension = (selected.extension ?? selected.name.split('.').last)
+        .toLowerCase();
 
-    if (extension == 'ics') {
-      await events.restoreBackup(_fromIcs(content));
-      return true;
+    await restoreContent(
+      events,
+      content,
+      extension,
+      expectedAccountGeneration: generation,
+    );
+    return true;
+  }
+
+  /// Enforce limits while reading, including files with missing/wrong metadata.
+  static Future<Uint8List> readBackupBytes(Stream<List<int>> stream) async {
+    final bytes = BytesBuilder(copy: false);
+    await for (final chunk in stream) {
+      if (bytes.length + chunk.length > maxImportBytes) {
+        throw const FormatException('백업 파일은 8MB까지 복원할 수 있습니다.');
+      }
+      bytes.add(chunk);
     }
-    if (extension == 'csv') {
-      await events.restoreBackup(_fromCsv(content));
-      return true;
+    return bytes.takeBytes();
+  }
+
+  static Future<void> restoreContent(
+    EventStore events,
+    String content,
+    String extension, {
+    int? expectedAccountGeneration,
+  }) async {
+    final generation = expectedAccountGeneration ?? events.accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
+    if (utf8.encode(content).length > maxImportBytes) {
+      throw const FormatException('백업 파일은 8MB까지 복원할 수 있습니다.');
     }
+    if (extension == 'ics' || extension == 'csv') {
+      await events.restoreBackup(
+        extension == 'ics' ? _fromIcs(content) : _fromCsv(content),
+        expectedAccountGeneration: generation,
+      );
+      return;
+    }
+    if (extension != 'json') {
+      throw const FormatException('.ics, .csv 또는 캘린더 백업 파일을 선택해 주세요.');
+    }
+    _checkJsonNesting(content);
 
     final decoded = jsonDecode(content);
     if (decoded is! Map || decoded['format'] != 'calendar-backup') {
@@ -163,14 +247,49 @@ class BackupService {
     }
     final rawEvents = decoded['events'];
     if (rawEvents is! List) throw const FormatException('일정 데이터가 없습니다.');
-    await events.restoreBackup(rawEvents);
+    await events.restoreBackup(
+      rawEvents,
+      expectedAccountGeneration: generation,
+    );
     final settings = decoded['displaySettings'];
     if (settings is Map) {
-      await DisplaySettings.instance.restoreBackup(
-        Map<String, dynamic>.from(settings),
-      );
+      for (final setting in DisplaySetting.values) {
+        if (generation != events.accountGeneration ||
+            preferencesGeneration !=
+                AccountPreferences.instance.accountGeneration) {
+          return;
+        }
+        final value = settings[setting.name];
+        if (value is bool) {
+          await DisplaySettings.instance.setEnabled(setting, value);
+        }
+      }
     }
-    return true;
+  }
+
+  static void _checkJsonNesting(String source) {
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    for (final unit in source.codeUnits) {
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (unit == 92) {
+          escaped = true;
+        } else if (unit == 34) {
+          inString = false;
+        }
+      } else if (unit == 34) {
+        inString = true;
+      } else if (unit == 91 || unit == 123) {
+        if (++depth > 32) {
+          throw const FormatException('백업 데이터가 너무 깊게 중첩되었습니다.');
+        }
+      } else if (unit == 93 || unit == 125) {
+        depth--;
+      }
+    }
   }
 
   static List<Map<String, dynamic>> _fromIcs(String source) {
@@ -182,7 +301,11 @@ class BackupService {
     Map<String, String>? event;
     var index = 0;
     for (final line in unfolded) {
+      if (line.length > 16 * 1024) {
+        throw const FormatException('일정 항목이 너무 큽니다.');
+      }
       if (line == 'BEGIN:VEVENT') {
+        if (event != null) throw const FormatException('ICS 일정 구조가 올바르지 않습니다.');
         event = <String, String>{};
       } else if (line == 'END:VEVENT' && event != null) {
         final start = event['DTSTART'];
@@ -212,6 +335,9 @@ class BackupService {
               'description': _unescapeIcs(event['DESCRIPTION']!),
             if (event['URL'] != null) 'url': _unescapeIcs(event['URL']!),
           });
+          if (raw.length > 10000) {
+            throw const FormatException('백업 일정은 10,000개까지 복원할 수 있습니다.');
+          }
         }
         event = null;
       } else if (event != null) {
@@ -222,19 +348,32 @@ class BackupService {
         }
       }
     }
+    if (event != null) throw const FormatException('ICS 일정이 완성되지 않았습니다.');
     if (raw.isEmpty) throw const FormatException('복원할 일정이 없는 .ics 파일입니다.');
     return raw;
   }
 
   static DateTime _parseIcsDate(String value) {
-    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.length < 8) throw const FormatException('날짜 형식이 올바르지 않습니다.');
+    if (!RegExp(r'^\d{8}(?:T\d{6}Z?)?$').hasMatch(value)) {
+      throw const FormatException('날짜 형식이 올바르지 않습니다.');
+    }
+    final date =
+        '${value.substring(0, 4)}-${value.substring(4, 6)}-${value.substring(6, 8)}';
+    final time = value.length == 8
+        ? null
+        : '${value.substring(9, 11)}:${value.substring(11, 13)}';
+    if (!isValidCalendarDate(date) ||
+        (time != null &&
+            (!isValidCalendarTime(time) ||
+                int.parse(value.substring(13, 15)) > 59))) {
+      throw const FormatException('날짜 형식이 올바르지 않습니다.');
+    }
     return DateTime(
-      int.parse(digits.substring(0, 4)),
-      int.parse(digits.substring(4, 6)),
-      int.parse(digits.substring(6, 8)),
-      digits.length >= 12 ? int.parse(digits.substring(8, 10)) : 0,
-      digits.length >= 12 ? int.parse(digits.substring(10, 12)) : 0,
+      int.parse(value.substring(0, 4)),
+      int.parse(value.substring(4, 6)),
+      int.parse(value.substring(6, 8)),
+      time == null ? 0 : int.parse(value.substring(9, 11)),
+      time == null ? 0 : int.parse(value.substring(11, 13)),
     );
   }
 
@@ -256,7 +395,8 @@ class BackupService {
       'durationMinutes',
       'color',
     ];
-    if (!required.every(headers.contains)) {
+    if (!required.every(headers.contains) ||
+        headers.toSet().length != headers.length) {
       throw const FormatException('캘린더에서 만든 .csv 파일을 선택해 주세요.');
     }
     final raw = <Map<String, dynamic>>[];
@@ -265,7 +405,16 @@ class BackupService {
       if (row.every((value) => value.isEmpty)) continue;
       String field(String name) {
         final index = headers.indexOf(name);
-        return index >= 0 && index < row.length ? row[index] : '';
+        final value = index >= 0 && index < row.length ? row[index] : '';
+        final encodingIndex = headers.indexOf('textEncoding');
+        if (encodingIndex >= 0 &&
+            encodingIndex < row.length &&
+            row[encodingIndex] == 'apostrophe-v1' &&
+            value.startsWith("'") &&
+            _isSpreadsheetFormula(value.substring(1))) {
+          return value.substring(1);
+        }
+        return value;
       }
 
       final date = field('date');
@@ -285,6 +434,9 @@ class BackupService {
           'description': field('description'),
         if (field('url').isNotEmpty) 'url': field('url'),
       });
+      if (raw.length > 10000) {
+        throw const FormatException('백업 일정은 10,000개까지 복원할 수 있습니다.');
+      }
     }
     if (raw.isEmpty) throw const FormatException('복원할 일정이 없는 .csv 파일입니다.');
     return raw;
@@ -306,6 +458,7 @@ class BackupService {
         }
       } else if (char == ',' && !quoted) {
         row.add(field.toString());
+        if (row.length > 32) throw const FormatException('CSV 열이 너무 많습니다.');
         field = StringBuffer();
       } else if ((char == '\n' || char == '\r') && !quoted) {
         if (char == '\r' &&
@@ -315,12 +468,17 @@ class BackupService {
         }
         row.add(field.toString());
         if (row.any((value) => value.isNotEmpty)) rows.add(row);
+        if (rows.length > 10001) throw const FormatException('CSV 행이 너무 많습니다.');
         row = <String>[];
         field = StringBuffer();
       } else {
         field.write(char);
+        if (field.length > 16 * 1024) {
+          throw const FormatException('CSV 항목이 너무 큽니다.');
+        }
       }
     }
+    if (quoted) throw const FormatException('CSV 따옴표가 완성되지 않았습니다.');
     row.add(field.toString());
     if (row.any((value) => value.isNotEmpty)) rows.add(row);
     return rows;

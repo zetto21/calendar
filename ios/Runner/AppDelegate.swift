@@ -34,19 +34,25 @@ final class FileExportChannel: NSObject, UIDocumentPickerDelegate {
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    guard call.method == "exportFiles",
-          let args = call.arguments as? [String: Any],
-          let paths = args["paths"] as? [String], !paths.isEmpty else {
+    guard call.method == "exportFiles" else {
       result(FlutterMethodNotImplemented)
+      return
+    }
+    guard let args = call.arguments as? [String: Any],
+          let paths = args["paths"] as? [String], !paths.isEmpty, paths.count <= 2,
+          Set(paths).count == paths.count else {
+      result(FlutterError(code: "invalid_paths", message: "저장할 백업 파일을 확인해 주세요.", details: nil))
       return
     }
     guard self.result == nil else {
       result(FlutterError(code: "busy", message: "파일 저장 창이 이미 열려 있습니다.", details: nil))
       return
     }
-    let urls = paths.map(URL.init(fileURLWithPath:)).filter { FileManager.default.fileExists(atPath: $0.path) }
-    guard !urls.isEmpty else {
-      result(FlutterError(code: "missing", message: "저장할 백업 파일을 찾지 못했습니다.", details: nil))
+    // Only generated backups may be shared: never a database, preferences
+    // file, directory or link pointing outside the temporary export folder.
+    let urls = paths.compactMap(Self.validatedBackupURL)
+    guard urls.count == paths.count, Set(urls).count == urls.count else {
+      result(FlutterError(code: "invalid_paths", message: "저장할 백업 파일을 확인해 주세요.", details: nil))
       return
     }
     self.result = result
@@ -61,6 +67,28 @@ final class FileExportChannel: NSObject, UIDocumentPickerDelegate {
       picker.modalPresentationStyle = .formSheet
       presenter.present(picker, animated: true)
     }
+  }
+
+  private static func validatedBackupURL(_ path: String) -> URL? {
+    guard path.hasPrefix("/"), path.utf8.count <= 4096 else { return nil }
+    let requested = URL(fileURLWithPath: path).standardizedFileURL
+    let exportRoot = FileManager.default.temporaryDirectory
+      .appendingPathComponent("calendar-exports", isDirectory: true)
+      .resolvingSymlinksInPath().standardizedFileURL
+    let url = requested.resolvingSymlinksInPath().standardizedFileURL
+    let directory = url.deletingLastPathComponent()
+    guard directory.deletingLastPathComponent() == exportRoot,
+          directory.lastPathComponent.hasPrefix("backup-"),
+          url.lastPathComponent.range(of: #"^calendar-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}\.(ics|csv)$"#,
+                                      options: .regularExpression) != nil,
+          let requestedAttributes = try? FileManager.default.attributesOfItem(atPath: requested.path),
+          requestedAttributes[.type] as? FileAttributeType == .typeRegular,
+          let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+          attributes[.type] as? FileAttributeType == .typeRegular,
+          let size = attributes[.size] as? NSNumber, size.int64Value <= 20 * 1024 * 1024 else {
+      return nil
+    }
+    return url
   }
 
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {

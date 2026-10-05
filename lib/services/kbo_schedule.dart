@@ -1,8 +1,7 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../logic/date_utils.dart' as date_utils;
+import 'secure_http.dart';
 
 class KboTeam {
   final String code, name, color;
@@ -81,13 +80,19 @@ class KboScheduleService {
         'size': '500',
       },
     );
-    final response = await http
-        .get(uri, headers: {'User-Agent': 'Mozilla/5.0'})
-        .timeout(const Duration(seconds: 10));
+    final response = await secureHttpRequest(
+      uri,
+      headers: {'User-Agent': 'Mozilla/5.0'},
+      timeout: const Duration(seconds: 10),
+      maxResponseBytes: 4 << 20,
+    );
     if (response.statusCode != 200) return const [];
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final body = decodeBoundedJson(
+      utf8.decode(response.bodyBytes),
+    ) as Map<String, dynamic>;
     final result = body['result'] as Map<String, dynamic>?;
     final games = (result?['games'] as List?) ?? const [];
+    if (games.length > 1000) throw const FormatException('경기 일정이 너무 많습니다.');
     return [for (final raw in games) _parseGame(raw as Map<String, dynamic>)];
   }
 

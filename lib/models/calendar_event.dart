@@ -1,4 +1,49 @@
+import 'dart:convert';
+
 enum RepeatFrequency { daily, weekly, biweekly, monthly, yearly }
+
+/// Strict calendar keys avoid DateTime's normalization of invalid dates/times.
+bool isValidCalendarDate(String value) {
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return false;
+  final parsed = DateTime.tryParse(value);
+  return parsed != null &&
+      parsed.year == int.parse(value.substring(0, 4)) &&
+      parsed.month == int.parse(value.substring(5, 7)) &&
+      parsed.day == int.parse(value.substring(8, 10));
+}
+
+bool isValidCalendarTime(String value) =>
+    RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d$').hasMatch(value);
+
+String? _eventString(
+  Map<String, dynamic> json,
+  String key, {
+  bool required = false,
+  int maxLength = 16 * 1024,
+}) {
+  final value = json[key];
+  if (value == null && !required) return null;
+  if (value is! String ||
+      value.length > maxLength ||
+      value.contains('\u0000') ||
+      (required && value.trim().isEmpty)) {
+    throw const FormatException('일정 데이터 형식이 올바르지 않습니다.');
+  }
+  return value;
+}
+
+String? _eventTimestamp(Map<String, dynamic> json, String key) {
+  final value = _eventString(json, key, maxLength: 64);
+  if (value != null &&
+      (!RegExp(
+            r'^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:[zZ]|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?$',
+          ).hasMatch(value) ||
+          !isValidCalendarDate(value.substring(0, 10)) ||
+          DateTime.tryParse(value) == null)) {
+    throw const FormatException('일정 날짜 형식이 올바르지 않습니다.');
+  }
+  return value;
+}
 
 RepeatFrequency? repeatFrequencyFromString(String? value) {
   for (final freq in RepeatFrequency.values) {
@@ -13,12 +58,21 @@ class EventRecurrence {
 
   const EventRecurrence({required this.frequency, this.until});
 
-  factory EventRecurrence.fromJson(Map<String, dynamic> json) => EventRecurrence(
-        frequency: repeatFrequencyFromString(json['frequency'] as String?) ?? RepeatFrequency.weekly,
-        until: json['until'] as String?,
-      );
+  factory EventRecurrence.fromJson(Map<String, dynamic> json) {
+    final frequency = repeatFrequencyFromString(
+      _eventString(json, 'frequency'),
+    );
+    final until = _eventString(json, 'until');
+    if (frequency == null || (until != null && !isValidCalendarDate(until))) {
+      throw const FormatException('반복 일정 형식이 올바르지 않습니다.');
+    }
+    return EventRecurrence(frequency: frequency, until: until);
+  }
 
-  Map<String, dynamic> toJson() => {'frequency': frequency.name, if (until != null) 'until': until};
+  Map<String, dynamic> toJson() => {
+    'frequency': frequency.name,
+    if (until != null) 'until': until,
+  };
 }
 
 /// Mirrors calendar_app/lib/types.ts CalendarEvent/EventDraft.
@@ -116,49 +170,70 @@ class CalendarEvent {
     );
   }
 
-  factory CalendarEvent.fromJson(Map<String, dynamic> json) => CalendarEvent(
-        id: json['id'] as String,
-        date: json['date'] as String,
-        title: json['title'] as String,
-        location: json['location'] as String?,
-        systemEventId: json['systemEventId'] as String?,
-        systemCalendarId: json['systemCalendarId'] as String?,
-        recurrence: json['recurrence'] != null ? EventRecurrence.fromJson(json['recurrence'] as Map<String, dynamic>) : null,
-        seriesId: json['seriesId'] as String?,
-        url: json['url'] as String?,
-        description: json['description'] as String?,
-        timeZone: json['timeZone'] as String?,
-        startsAt: json['startsAt'] as String?,
-        endsAt: json['endsAt'] as String?,
-        uid: json['uid'] as String?,
-        createdAt: json['createdAt'] as String?,
-        updatedAt: json['updatedAt'] as String?,
-        time: json['time'] as String?,
-        duration: (json['duration'] as num).toInt(),
-        color: json['color'] as String,
-      );
+  factory CalendarEvent.fromJson(Map<String, dynamic> json) {
+    final date = _eventString(json, 'date', required: true)!;
+    final time = _eventString(json, 'time');
+    final duration = json['duration'];
+    final color = _eventString(json, 'color', required: true)!;
+    final recurrence = json['recurrence'];
+    if (!isValidCalendarDate(date) ||
+        (time != null && !isValidCalendarTime(time)) ||
+        duration is! num ||
+        !duration.isFinite ||
+        duration != duration.toInt() ||
+        duration < 0 ||
+        duration > 366 * 24 * 60 ||
+        !RegExp(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$').hasMatch(color) ||
+        (recurrence != null && recurrence is! Map<String, dynamic>) ||
+        utf8.encode(jsonEncode(json)).length > 16 * 1024) {
+      throw const FormatException('일정 날짜, 시간 또는 데이터 형식이 올바르지 않습니다.');
+    }
+    return CalendarEvent(
+      id: _eventString(json, 'id', required: true, maxLength: 256)!,
+      date: date,
+      title: _eventString(json, 'title', required: true)!,
+      location: _eventString(json, 'location'),
+      systemEventId: _eventString(json, 'systemEventId'),
+      systemCalendarId: _eventString(json, 'systemCalendarId'),
+      recurrence: recurrence == null
+          ? null
+          : EventRecurrence.fromJson(recurrence as Map<String, dynamic>),
+      seriesId: _eventString(json, 'seriesId'),
+      url: _eventString(json, 'url'),
+      description: _eventString(json, 'description'),
+      timeZone: _eventString(json, 'timeZone'),
+      startsAt: _eventTimestamp(json, 'startsAt'),
+      endsAt: _eventTimestamp(json, 'endsAt'),
+      uid: _eventString(json, 'uid'),
+      createdAt: _eventTimestamp(json, 'createdAt'),
+      updatedAt: _eventTimestamp(json, 'updatedAt'),
+      time: time,
+      duration: duration.toInt(),
+      color: color,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'date': date,
-        'title': title,
-        if (location != null) 'location': location,
-        if (systemEventId != null) 'systemEventId': systemEventId,
-        if (systemCalendarId != null) 'systemCalendarId': systemCalendarId,
-        if (recurrence != null) 'recurrence': recurrence!.toJson(),
-        if (seriesId != null) 'seriesId': seriesId,
-        if (url != null) 'url': url,
-        if (description != null) 'description': description,
-        if (timeZone != null) 'timeZone': timeZone,
-        if (startsAt != null) 'startsAt': startsAt,
-        if (endsAt != null) 'endsAt': endsAt,
-        if (uid != null) 'uid': uid,
-        if (createdAt != null) 'createdAt': createdAt,
-        if (updatedAt != null) 'updatedAt': updatedAt,
-        if (time != null) 'time': time,
-        'duration': duration,
-        'color': color,
-      };
+    'id': id,
+    'date': date,
+    'title': title,
+    if (location != null) 'location': location,
+    if (systemEventId != null) 'systemEventId': systemEventId,
+    if (systemCalendarId != null) 'systemCalendarId': systemCalendarId,
+    if (recurrence != null) 'recurrence': recurrence!.toJson(),
+    if (seriesId != null) 'seriesId': seriesId,
+    if (url != null) 'url': url,
+    if (description != null) 'description': description,
+    if (timeZone != null) 'timeZone': timeZone,
+    if (startsAt != null) 'startsAt': startsAt,
+    if (endsAt != null) 'endsAt': endsAt,
+    if (uid != null) 'uid': uid,
+    if (createdAt != null) 'createdAt': createdAt,
+    if (updatedAt != null) 'updatedAt': updatedAt,
+    if (time != null) 'time': time,
+    'duration': duration,
+    'color': color,
+  };
 }
 
 /// date key ("YYYY-MM-DD") -> events on that date.

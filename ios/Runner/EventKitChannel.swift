@@ -28,7 +28,10 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
   }
 
   private func parseISO(_ value: String) -> Date? {
-    isoFormatter.date(from: value) ?? isoFormatterNoFraction.date(from: value)
+    guard value.utf8.count <= 64,
+          let date = isoFormatter.date(from: value) ?? isoFormatterNoFraction.date(from: value),
+          date.timeIntervalSince1970.isFinite else { return nil }
+    return date
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -153,25 +156,35 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
   private func eventTimes(_ args: [String: Any]) -> (start: Date, end: Date, isAllDay: Bool)? {
     let isAllDay = args["isAllDay"] as? Bool ?? false
     if isAllDay {
-      guard let dateKey = args["date"] as? String else { return nil }
+      guard let dateKey = args["date"] as? String,
+            dateKey.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) != nil else { return nil }
       let parts = dateKey.split(separator: "-").compactMap { Int($0) }
-      guard parts.count == 3 else { return nil }
+      guard parts.count == 3, (1...9999).contains(parts[0]),
+            (1...12).contains(parts[1]), (1...31).contains(parts[2]) else { return nil }
       var components = DateComponents()
       components.year = parts[0]
       components.month = parts[1]
       components.day = parts[2]
-      guard let start = Calendar.current.date(from: components) else { return nil }
-      let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = .current
+      guard let start = calendar.date(from: components),
+            calendar.component(.year, from: start) == parts[0],
+            calendar.component(.month, from: start) == parts[1],
+            calendar.component(.day, from: start) == parts[2],
+            let end = calendar.date(byAdding: .day, value: 1, to: start), end > start else { return nil }
       return (start, end, true)
     }
     guard let startsAt = args["startsAt"] as? String, let start = parseISO(startsAt) else { return nil }
     let duration = (args["duration"] as? NSNumber)?.doubleValue ?? 60
+    guard duration.isFinite, duration >= 0, duration <= 366 * 24 * 60 else { return nil }
     let end: Date
-    if let endsAt = args["endsAt"] as? String, let parsedEnd = parseISO(endsAt) {
+    if let endsAt = args["endsAt"] as? String {
+      guard let parsedEnd = parseISO(endsAt) else { return nil }
       end = parsedEnd
     } else {
       end = start.addingTimeInterval(duration * 60)
     }
+    guard end.timeIntervalSince1970.isFinite, end >= start else { return nil }
     return (start, end, false)
   }
 
@@ -198,6 +211,10 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
   }
 
   private func createEvent(_ args: [String: Any], result: @escaping FlutterResult) {
+    guard hasCalendarAccess() else {
+      result(FlutterError(code: "access_denied", message: "설정에서 캘린더 접근을 허용해 주세요.", details: nil))
+      return
+    }
     guard let times = eventTimes(args) else {
       result(FlutterError(code: "invalid_args", message: "missing start time", details: nil))
       return
@@ -223,6 +240,10 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
   }
 
   private func updateEvent(_ args: [String: Any], result: @escaping FlutterResult) {
+    guard hasCalendarAccess() else {
+      result(FlutterError(code: "access_denied", message: "설정에서 캘린더 접근을 허용해 주세요.", details: nil))
+      return
+    }
     guard let identifier = args["systemEventId"] as? String, let event = store.event(withIdentifier: identifier) else {
       result(false)
       return
@@ -252,6 +273,10 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
   }
 
   private func deleteEvent(_ args: [String: Any], result: @escaping FlutterResult) {
+    guard hasCalendarAccess() else {
+      result(FlutterError(code: "access_denied", message: "설정에서 캘린더 접근을 허용해 주세요.", details: nil))
+      return
+    }
     guard let identifier = args["systemEventId"] as? String, let event = store.event(withIdentifier: identifier) else {
       result(false)
       return
@@ -266,7 +291,7 @@ class EventKitChannel: NSObject, EKEventEditViewDelegate {
 
   private func fetchEvents(_ args: [String: Any], result: @escaping FlutterResult) {
     guard let startString = args["start"] as? String, let endString = args["end"] as? String,
-          let start = parseISO(startString), let end = parseISO(endString) else {
+          let start = parseISO(startString), let end = parseISO(endString), end > start else {
       result(FlutterError(code: "invalid_args", message: "missing range", details: nil))
       return
     }

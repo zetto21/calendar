@@ -96,14 +96,18 @@ class LiveUpdateService : Service() {
         if (intent?.hasExtra("eventID") == true) {
             val start = intent.getLongExtra("start", 0)
             val end = intent.getLongExtra("end", 0)
-            if (end <= start || end <= System.currentTimeMillis()) {
+            val eventID = intent.getStringExtra("eventID")
+            val title = intent.getStringExtra("title")
+            if (eventID.isNullOrBlank() || eventID.length > 512 || title.isNullOrBlank() || title.length > 4096 ||
+                start < -62135596800000L || end > 253402300799000L ||
+                end <= start || end <= System.currentTimeMillis()) {
                 finish()
                 return START_NOT_STICKY
             }
             prefs.edit()
-                .putString("eventID", intent.getStringExtra("eventID"))
-                .putString("title", intent.getStringExtra("title"))
-                .putString("color", intent.getStringExtra("color"))
+                .putString("eventID", eventID)
+                .putString("title", title.take(120))
+                .putString("color", intent.getStringExtra("color")?.take(16))
                 .putLong("start", start).putLong("end", end).apply()
         }
         if (activeIDs(this).isEmpty() || !notificationsEnabled()) {

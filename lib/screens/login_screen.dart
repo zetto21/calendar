@@ -1,4 +1,5 @@
 import '../widgets/app_dialog.dart';
+
 import 'dart:convert' show base64Url, utf8;
 import 'dart:math' show Random;
 
@@ -7,10 +8,11 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import '../logic/security_urls.dart';
 import '../services/auth_service.dart';
+import '../services/oauth_browser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/brand_marks.dart';
 import '../widgets/macos_login_brand.dart';
@@ -176,7 +178,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _socialLogin(SocialProvider provider) async {
-    if (_socialBusy != null || !_enabledProviders.contains(provider)) return;
+    if (_isAuthenticating || !_enabledProviders.contains(provider)) return;
     setState(() {
       _socialBusy = provider;
       _message = '';
@@ -188,16 +190,32 @@ class _LoginScreenState extends State<LoginScreen>
         widget.onAuthenticated(user);
         return;
       }
-      final result = await FlutterWebAuth2.authenticate(
-        url: AuthService.instance.socialLoginStartURL(provider),
-        callbackUrlScheme: 'calendar',
+      // Bind the one-time login code to this app's authentication attempt.
+      // A code injected by another browser or custom-scheme handler cannot
+      // be exchanged without this verifier.
+      final random = Random.secure();
+      final clientVerifier = base64Url
+          .encode(List<int>.generate(32, (_) => random.nextInt(256)))
+          .replaceAll('=', '');
+      final clientChallenge = base64Url
+          .encode(sha256.convert(utf8.encode(clientVerifier)).bytes)
+          .replaceAll('=', '');
+      final result = await authenticateOAuthBrowser(
+        url: AuthService.instance.socialLoginStartURL(
+          provider,
+          codeChallenge: clientChallenge,
+        ),
       );
-      final callback = Uri.parse(result);
-      final error = callback.queryParameters['error'];
+      final callback = parseSocialAuthCallback(
+        result,
+        webOrigin: kIsWeb ? Uri.base : null,
+      );
+      final error = callback.error;
       if (error != null) throw AuthException(error);
-      final code = callback.queryParameters['code'];
-      if (code == null) throw AuthException('로그인 코드를 받지 못했습니다.');
-      final user = await AuthService.instance.exchangeSocialCode(code);
+      final user = await AuthService.instance.exchangeSocialCode(
+        callback.code!,
+        clientVerifier: clientVerifier,
+      );
       if (!mounted) return;
       widget.onAuthenticated(user);
     } catch (error) {
@@ -221,7 +239,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _submit() async {
-    if (_busy) return;
+    if (_isAuthenticating) return;
     final email = _emailController.text.trim();
     if (!_emailRe.hasMatch(email)) {
       setState(() => _message = '올바른 이메일 주소를 입력해 주세요.');
@@ -241,6 +259,8 @@ class _LoginScreenState extends State<LoginScreen>
         email,
         _passwordController.text,
       );
+      if (!mounted) return;
+      _passwordController.clear();
       widget.onAuthenticated(user);
     } catch (error) {
       if (!mounted) return;
@@ -632,11 +652,7 @@ class _LoginScreenState extends State<LoginScreen>
                 order: 1,
                 child: _buildOptionButton(
                   label: '이메일로 계속 진행',
-                  icon: Icon(
-                    CupertinoIcons.envelope,
-                    color: blue,
-                    size: 27,
-                  ),
+                  icon: Icon(CupertinoIcons.envelope, color: blue, size: 27),
                   color: blue.withValues(alpha: 0.16),
                   foregroundColor: blue,
                   onPressed: _isAuthenticating
@@ -645,15 +661,9 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
               ),
               SizedBox(height: compact ? 10 : 14),
-              _enter(
-                order: 2,
-                child: isAndroid ? googleButton : appleButton,
-              ),
+              _enter(order: 2, child: isAndroid ? googleButton : appleButton),
               SizedBox(height: compact ? 10 : 14),
-              _enter(
-                order: 3,
-                child: isAndroid ? appleButton : googleButton,
-              ),
+              _enter(order: 3, child: isAndroid ? appleButton : googleButton),
               SizedBox(height: compact ? 14 : 20),
               _enter(order: 4, child: _buildOtherSocialSection()),
             ];
@@ -999,6 +1009,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     focusNode: _passwordFocus,
                                     obscureText: !_passwordVisible,
                                     autocorrect: false,
+                                    enableSuggestions: false,
                                     textInputAction: TextInputAction.go,
                                     enabled: !_isAuthenticating,
                                     onSubmitted: (_) => _submit(),

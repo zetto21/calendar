@@ -1,0 +1,36 @@
+import Foundation
+{{VALIDATED_BACKUP_URL}}
+
+let fm = FileManager.default
+let root = fm.temporaryDirectory.appendingPathComponent("calendar-exports", isDirectory: true)
+let testDirectory = root.appendingPathComponent("backup-security-" + UUID().uuidString, isDirectory: true)
+try fm.createDirectory(at: testDirectory, withIntermediateDirectories: true)
+defer { try? fm.removeItem(at: testDirectory) }
+let valid = testDirectory.appendingPathComponent("calendar-backup-2026-10-04.ics")
+try Data("BEGIN:VCALENDAR".utf8).write(to: valid)
+var checks = 0
+func check(_ condition: @autoclosure () -> Bool, _ name: String) {
+    precondition(condition(), name)
+    checks += 1
+}
+check(validatedBackupURL(valid.path) != nil, "generated backup accepted")
+check(validatedBackupURL("calendar-backup-2026-10-04.ics") == nil, "relative path rejected")
+check(validatedBackupURL(fm.temporaryDirectory.appendingPathComponent("calendar-backup-2026-10-04.ics").path) == nil, "outside export root rejected")
+let privateFile = testDirectory.appendingPathComponent("calendar.sqlite")
+try Data("synthetic database".utf8).write(to: privateFile)
+check(validatedBackupURL(privateFile.path) == nil, "private database rejected")
+let missing = testDirectory.appendingPathComponent("calendar-backup-2026-10-05.ics")
+check(validatedBackupURL(missing.path) == nil, "missing file rejected")
+let directory = testDirectory.appendingPathComponent("calendar-backup-2026-10-05.csv")
+try fm.createDirectory(at: directory, withIntermediateDirectories: false)
+check(validatedBackupURL(directory.path) == nil, "directory rejected")
+let link = testDirectory.appendingPathComponent("calendar-backup-2026-10-06.ics")
+try fm.createSymbolicLink(at: link, withDestinationURL: valid)
+check(validatedBackupURL(link.path) == nil, "symbolic link rejected")
+let large = testDirectory.appendingPathComponent("calendar-backup-2026-10-07.csv")
+fm.createFile(atPath: large.path, contents: Data())
+let handle = try FileHandle(forWritingTo: large)
+try handle.truncate(atOffset: 20 * 1024 * 1024 + 1)
+try handle.close()
+check(validatedBackupURL(large.path) == nil, "oversized file rejected")
+print("Native export path checks passed: \(checks)")

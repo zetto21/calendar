@@ -44,6 +44,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /android/build/
+/android/key.properties
+*.jks
+*.keystore
 
 # Widget Preview related
 .widget_preview/

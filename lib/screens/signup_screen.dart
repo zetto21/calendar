@@ -69,6 +69,9 @@ class _SignupScreenState extends State<SignupScreen> {
     });
     try {
       final user = await AuthService.instance.register(email, password);
+      if (!mounted) return;
+      _passwordController.clear();
+      _confirmController.clear();
       widget.onAuthenticated(user);
     } catch (error) {
       if (!mounted) return;
@@ -201,6 +204,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                   focusNode: _passwordFocus,
                                   obscureText: !_visible,
                                   autocorrect: false,
+                                  enableSuggestions: false,
                                   enabled: !_busy,
                                   textInputAction: TextInputAction.next,
                                   onSubmitted: (_) =>
@@ -261,6 +265,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                   focusNode: _confirmFocus,
                                   obscureText: !_visible,
                                   autocorrect: false,
+                                  enableSuggestions: false,
                                   enabled: !_busy,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submit(),

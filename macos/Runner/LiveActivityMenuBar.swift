@@ -35,11 +35,13 @@ final class LiveActivityMenuBar: NSObject {
       ])
     case "start", "update":
       guard let args = call.arguments as? [String: Any],
-            let newID = args["eventID"] as? String, !newID.isEmpty,
+            let newID = args["eventID"] as? String, !newID.isEmpty, newID.utf8.count <= 512,
             let newTitle = args["title"] as? String,
-            !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, newTitle.utf8.count <= 4096,
             let startValue = args["start"] as? NSNumber,
-            let endValue = args["end"] as? NSNumber else {
+            let endValue = args["end"] as? NSNumber,
+            startValue.doubleValue.isFinite, endValue.doubleValue.isFinite,
+            startValue.doubleValue >= -62135596800, endValue.doubleValue <= 253402300799 else {
         result(FlutterError(code: "invalid", message: "일정 정보를 확인해 주세요.", details: nil))
         return
       }
@@ -57,7 +59,7 @@ final class LiveActivityMenuBar: NSObject {
       }
       eventID = newID
       eventTitle = String(newTitle.prefix(120))
-      colorHex = args["color"] as? String ?? "#3B82F6"
+      colorHex = String((args["color"] as? String ?? "#3B82F6").prefix(16))
       start = newStart
       end = newEnd
       ensureStatusItem()

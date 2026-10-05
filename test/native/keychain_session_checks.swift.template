@@ -1,0 +1,86 @@
+import Foundation
+import Security
+struct MockCall { let method: String; let arguments: Any? }
+struct FlutterError { let code: String; let message: String; let details: Any? }
+let FlutterMethodNotImplemented = "not_implemented"
+var protectedStore: [String: Data] = [:]
+var legacyStore: [String: Data] = [:]
+var operations: [String] = []
+var failProtectedWrite = false
+var attributesWereProtected = true
+func values(_ query: CFDictionary) -> [String: Any] {
+  unsafeBitCast(query, to: NSDictionary.self) as! [String: Any]
+}
+func target(_ q: [String: Any]) -> (String, Bool) {
+  (q[kSecAttrAccount as String] as! String, q[kSecUseDataProtectionKeychain as String] as? Bool == true)
+}
+func SecItemCopyMatching(_ query: CFDictionary, _ result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus {
+  let (key, dp) = target(values(query))
+  operations.append(dp ? "read_protected" : "read_legacy")
+  guard let data = (dp ? protectedStore : legacyStore)[key] else { return errSecItemNotFound }
+  result?.pointee = data as CFTypeRef
+  return errSecSuccess
+}
+func SecItemUpdate(_ query: CFDictionary, _ attributes: CFDictionary) -> OSStatus {
+  let (key, dp) = target(values(query))
+  operations.append(dp ? "update_protected" : "update_legacy")
+  if failProtectedWrite && dp { return errSecInteractionNotAllowed }
+  guard (dp ? protectedStore : legacyStore)[key] != nil else { return errSecItemNotFound }
+  let attrs = values(attributes)
+  attributesWereProtected = attributesWereProtected && dp && attrs[kSecAttrAccessible as String] as? String == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
+  if dp { protectedStore[key] = attrs[kSecValueData as String] as? Data }
+  else { legacyStore[key] = attrs[kSecValueData as String] as? Data }
+  return errSecSuccess
+}
+func SecItemAdd(_ attributes: CFDictionary, _ result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus {
+  let attrs = values(attributes)
+  let (key, dp) = target(attrs)
+  operations.append(dp ? "add_protected" : "add_legacy")
+  if failProtectedWrite && dp { return errSecInteractionNotAllowed }
+  attributesWereProtected = attributesWereProtected && dp && attrs[kSecAttrAccessible as String] as? String == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String && attrs[kSecAttrSynchronizable as String] as? Bool == false
+  if dp { protectedStore[key] = attrs[kSecValueData as String] as? Data }
+  else { legacyStore[key] = attrs[kSecValueData as String] as? Data }
+  return errSecSuccess
+}
+func SecItemDelete(_ query: CFDictionary) -> OSStatus {
+  let (key, dp) = target(values(query))
+  operations.append(dp ? "delete_protected" : "delete_legacy")
+  if dp { return protectedStore.removeValue(forKey: key) == nil ? errSecItemNotFound : errSecSuccess }
+  return legacyStore.removeValue(forKey: key) == nil ? errSecItemNotFound : errSecSuccess
+}
+{{SESSION_HANDLER_CLASS}}
+
+let handler = SessionHarness()
+let account = "https://api.example.test"
+var checks = 0
+func check(_ condition: @autoclosure () -> Bool, _ name: String) {
+  precondition(condition(), name)
+  checks += 1
+}
+func call(_ method: String, _ arguments: [String:String]) -> Any? {
+  var response: Any?
+  handler.handle(MockCall(method: method, arguments: arguments)) { response = $0 }
+  return response
+}
+let saved = Data("synthetic-legacy-session".utf8)
+legacyStore[account] = saved
+check(call("read", ["account": account]) as? String == "synthetic-legacy-session", "legacy value restored")
+check(protectedStore[account] == saved, "protected replacement persisted")
+check(legacyStore[account] == nil, "legacy secret removed")
+check(operations.firstIndex(of: "add_protected")! < operations.firstIndex(of: "delete_legacy")!, "replacement saved before legacy removal")
+check(attributesWereProtected, "device-bound unlocked-only non-sync policy")
+check(call("write", ["account": account, "value": "synthetic-new-session"]) == nil, "protected write succeeds")
+check(call("read", ["account": account]) as? String == "synthetic-new-session", "protected read succeeds")
+legacyStore[account] = saved
+check(call("delete", ["account": account]) == nil, "logout succeeds")
+check(protectedStore[account] == nil && legacyStore[account] == nil, "logout clears both stores")
+legacyStore[account] = saved
+failProtectedWrite = true
+check(call("read", ["account": account]) is FlutterError, "migration failure surfaced")
+check(legacyStore[account] == saved && protectedStore[account] == nil, "migration failure retains only existing legacy copy")
+failProtectedWrite = false
+check(call("write", ["account": account, "value": String(repeating: "x", count: 65537)]) is FlutterError, "oversized session rejected")
+check(call("read", ["account": ""]) is FlutterError, "empty account rejected")
+check(call("read", ["account": "https://api.example.test\n"]) is FlutterError, "control characters in account rejected")
+check(call("read", ["account": String(repeating: "x", count: 2049)]) is FlutterError, "oversized account rejected")
+print("Native Keychain mocked regression checks passed: \(checks)")

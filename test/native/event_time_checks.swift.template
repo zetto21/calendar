@@ -1,0 +1,23 @@
+import Foundation
+{{EVENT_TIME_CLASS}}
+
+let handler = EventTimesHarness()
+var count = 0
+func check(_ condition: @autoclosure () -> Bool, _ name: String) {
+  precondition(condition(), name)
+  count += 1
+}
+let valid: [String: Any] = ["startsAt": "2026-10-04T10:00:00Z", "duration": 60]
+check(handler.eventTimes(valid) != nil, "timed event accepted")
+check(handler.eventTimes(["isAllDay": true, "date": "2024-02-29"]) != nil, "leap day accepted")
+check(handler.eventTimes(["isAllDay": true, "date": "2026-02-29"]) == nil, "invalid leap date rejected")
+check(handler.eventTimes(["isAllDay": true, "date": "2026-02-30"]) == nil, "normalized impossible date rejected")
+check(handler.eventTimes(["isAllDay": true, "date": "2026-13-01"]) == nil, "invalid month rejected")
+check(handler.eventTimes(["isAllDay": true, "date": "2026-x-10-04"]) == nil, "malformed components rejected")
+check(handler.eventTimes(["startsAt": "2026-10-04T10:00:00Z", "duration": Double.nan]) == nil, "NaN duration rejected")
+check(handler.eventTimes(["startsAt": "2026-10-04T10:00:00Z", "duration": Double.infinity]) == nil, "infinite duration rejected")
+check(handler.eventTimes(["startsAt": "2026-10-04T10:00:00Z", "duration": -1]) == nil, "negative duration rejected")
+check(handler.eventTimes(["startsAt": "2026-10-04T10:00:00Z", "endsAt": "2026-10-04T09:00:00Z", "duration": 60]) == nil, "reversed dates rejected")
+check(handler.eventTimes(["startsAt": "2026-10-04T10:00:00Z", "endsAt": "malformed", "duration": 60]) == nil, "invalid explicit end rejected")
+check(handler.eventTimes(["startsAt": "2026-10-04T10:00:00Z", "duration": 0]) != nil, "zero duration compatibility preserved")
+print("Native EventKit time checks passed: \(count)")

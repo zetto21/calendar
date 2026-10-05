@@ -93,15 +93,19 @@ class MainFlutterWindow: NSWindow {
     )
     sessionChannel?.setMethodCallHandler { call, result in
       guard let arguments = call.arguments as? [String: String],
-            let account = arguments["account"] else {
+            let account = arguments["account"], !account.isEmpty, account.utf8.count <= 2048,
+            account.rangeOfCharacter(from: .controlCharacters) == nil else {
         result(FlutterError(code: "invalid_arguments", message: "Missing account", details: nil))
         return
       }
-      let query: [String: Any] = [
+      let legacyQuery: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: (Bundle.main.bundleIdentifier ?? "calendar_app") + ".session",
         kSecAttrAccount as String: account,
+        kSecAttrSynchronizable as String: false,
       ]
+      var query = legacyQuery
+      query[kSecUseDataProtectionKeychain as String] = true
       var status: OSStatus
       switch call.method {
       case "read":
@@ -110,26 +114,42 @@ class MainFlutterWindow: NSWindow {
         lookup[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
         status = SecItemCopyMatching(lookup as CFDictionary, &item)
-        if status == errSecItemNotFound { result(nil); return }
+        if status == errSecItemNotFound {
+          // Earlier versions used the file-based macOS keychain. Move the
+          // existing value only after its protected replacement was saved.
+          var legacyLookup = legacyQuery
+          legacyLookup[kSecReturnData as String] = true
+          legacyLookup[kSecMatchLimit as String] = kSecMatchLimitOne
+          status = SecItemCopyMatching(legacyLookup as CFDictionary, &item)
+          if status == errSecItemNotFound { result(nil); return }
+          if status == errSecSuccess, let data = item as? Data {
+            status = Self.saveProtectedSession(data, query: query)
+          }
+        }
         if status == errSecSuccess, let data = item as? Data {
-          result(String(data: data, encoding: .utf8))
-          return
+          guard data.count <= 65536, let value = String(data: data, encoding: .utf8) else {
+            result(FlutterError(code: "invalid_value", message: "Invalid saved session", details: nil))
+            return
+          }
+          status = SecItemDelete(legacyQuery as CFDictionary)
+          if status == errSecSuccess || status == errSecItemNotFound { result(value); return }
         }
       case "write":
-        guard let value = arguments["value"], let data = value.data(using: .utf8) else {
+        guard let value = arguments["value"], !value.isEmpty, value.utf8.count <= 65536,
+              let data = value.data(using: .utf8) else {
           result(FlutterError(code: "invalid_value", message: "Missing session", details: nil))
           return
         }
-        status = SecItemUpdate(query as CFDictionary,
-          [kSecValueData as String: data] as CFDictionary)
-        if status == errSecItemNotFound {
-          var item = query
-          item[kSecValueData as String] = data
-          status = SecItemAdd(item as CFDictionary, nil)
+        status = Self.saveProtectedSession(data, query: query)
+        if status == errSecSuccess {
+          let legacyStatus = SecItemDelete(legacyQuery as CFDictionary)
+          if legacyStatus != errSecItemNotFound { status = legacyStatus }
         }
       case "delete":
         status = SecItemDelete(query as CFDictionary)
         if status == errSecItemNotFound { status = errSecSuccess }
+        let legacyStatus = SecItemDelete(legacyQuery as CFDictionary)
+        if status == errSecSuccess && legacyStatus != errSecItemNotFound { status = legacyStatus }
       default:
         result(FlutterMethodNotImplemented)
         return
@@ -161,6 +181,18 @@ class MainFlutterWindow: NSWindow {
       self?.switchScreen(screen)
       result(nil)
     }
+  }
+
+  private static func saveProtectedSession(_ data: Data, query: [String: Any]) -> OSStatus {
+    guard !data.isEmpty, data.count <= 65536 else { return errSecParam }
+    let attributes: [String: Any] = [
+      kSecValueData as String: data,
+      kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+    ]
+    let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+    if status != errSecItemNotFound { return status }
+    let item = query.merging(attributes) { _, value in value }
+    return SecItemAdd(item as CFDictionary, nil)
   }
 
 

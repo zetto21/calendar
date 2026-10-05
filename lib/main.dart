@@ -15,7 +15,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/rendering.dart' show debugPaintBaselinesEnabled;
 import 'package:flutter/services.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:provider/provider.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -26,6 +25,7 @@ import 'logic/event_dedup.dart';
 import 'logic/event_details.dart' show wallTimeToDate;
 import 'logic/quick_add.dart';
 import 'logic/recurrence.dart';
+import 'logic/security_urls.dart';
 import 'models/calendar_event.dart';
 import 'native/eventkit.dart';
 import 'native/live_activity.dart';
@@ -41,6 +41,7 @@ import 'services/auth_service.dart';
 import 'services/app_update_service.dart';
 import 'services/backup_service.dart';
 import 'services/kbo_schedule.dart';
+import 'services/oauth_browser.dart';
 import 'storage/event_store.dart';
 import 'storage/display_settings.dart';
 import 'storage/account_preferences.dart';
@@ -142,6 +143,7 @@ class _AuthGateState extends State<AuthGate> {
   AuthUser? _user;
   _AuthScreen _screen = _AuthScreen.login;
   int _authGeneration = 0;
+  bool _loggingOut = false;
 
   @override
   void initState() {
@@ -172,10 +174,15 @@ class _AuthGateState extends State<AuthGate> {
     final imports = context.read<ImportedEvents>();
     final events = context.read<EventStore>();
     await events.selectAccount(user?.id);
+    if (!mounted || generation != _authGeneration) return;
     await events.sync();
+    if (!mounted || generation != _authGeneration) return;
     await AccountPreferences.instance.selectAccount(user?.id);
+    if (!mounted || generation != _authGeneration) return;
     await AccountPreferences.instance.sync();
+    if (!mounted || generation != _authGeneration) return;
     await DisplaySettings.instance.load();
+    if (!mounted || generation != _authGeneration) return;
     await imports.load();
     if (!mounted || generation != _authGeneration) return;
     await MacosWindow.showCalendar(user != null);
@@ -185,6 +192,68 @@ class _AuthGateState extends State<AuthGate> {
       _loading = false;
       _screen = _AuthScreen.login;
     });
+  }
+
+  Future<void> _logout() async {
+    if (_loggingOut) return;
+    _loggingOut = true;
+    final generation = _authGeneration;
+    var incomplete = false;
+    var guestGeneration = generation;
+    try {
+      try {
+        await LiveActivity.end();
+      } catch (_) {
+        incomplete = true;
+      }
+      if (!mounted || generation != _authGeneration) return;
+      try {
+        if (_user != null) await AuthService.instance.logout();
+      } catch (_) {
+        incomplete = true;
+      }
+    } finally {
+      // Credential deletion or remote revocation failures must still remove
+      // the authenticated calendar from the screen. A newer login wins.
+      if (mounted && generation == _authGeneration) {
+        guestGeneration = generation + 1;
+        try {
+          await _acceptUser(null);
+        } catch (_) {
+          incomplete = true;
+          if (mounted && guestGeneration == _authGeneration) {
+            setState(() {
+              _user = null;
+              _loading = false;
+              _screen = _AuthScreen.login;
+            });
+          }
+        }
+      }
+      _loggingOut = false;
+    }
+    if (!mounted ||
+        !incomplete ||
+        guestGeneration != _authGeneration ||
+        _user != null) {
+      return;
+    }
+    await showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        title: const Text('로그아웃 안내'),
+        content: const Text(
+          '로그인 화면으로 이동했습니다. 일부 로그인 정보나 실시간 활동을 종료하지 못했을 수 있습니다. 연결 상태를 확인해 주세요.',
+        ),
+        actions: [
+          AppDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -220,15 +289,7 @@ class _AuthGateState extends State<AuthGate> {
     return CalendarHome(
       deviceZone: widget.deviceZone,
       user: _user,
-      onLogout: () async {
-        await LiveActivity.end();
-        try {
-          if (_user != null) await AuthService.instance.logout();
-        } on ServerConnectionException {
-          // Local credentials are cleared even when the server is offline.
-        }
-        if (mounted) await _acceptUser(null);
-      },
+      onLogout: _logout,
     );
   }
 }
@@ -532,7 +593,7 @@ class _CalendarHomeState extends State<CalendarHome>
             onPressed: () async {
               final url = update.updateUrl;
               if (url == null) return;
-              final uri = Uri.tryParse(url);
+              final uri = secureHttpsUri(url);
               if (uri != null) {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
               }
@@ -1093,14 +1154,25 @@ class _CalendarHomeState extends State<CalendarHome>
 
   Future<void> _connectCalendar(String provider) async {
     final importedEvents = context.read<ImportedEvents>();
+    final eventGeneration = _eventStore.accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
+    bool currentAccount() =>
+        _accountIsCurrent(eventGeneration, preferencesGeneration);
     try {
       if (provider == 'device') {
-        if (!await EventKit.requestAccess()) {
+        final granted = await EventKit.requestAccess();
+        if (!currentAccount()) return;
+        if (!granted) {
           throw AuthException('기기 캘린더 접근을 허용해 주세요.');
         }
         final deviceCalendars = await EventKit.fetchCalendars();
+        if (!currentAccount()) return;
         final selectedCalendars = await _pickDeviceCalendars(deviceCalendars);
-        if (selectedCalendars == null || selectedCalendars.isEmpty) return;
+        if (!currentAccount() ||
+            selectedCalendars == null ||
+            selectedCalendars.isEmpty) {
+          return;
+        }
         final (from, to) = _range;
         final native = await EventKit.fetchEvents(
           date_utils.parseDateKey(from),
@@ -1109,6 +1181,7 @@ class _CalendarHomeState extends State<CalendarHome>
               .map((calendar) => calendar.id)
               .toList(),
         );
+        if (!currentAccount()) return;
         final imported = <String, List<CalendarEvent>>{};
         for (final event in native) {
           (imported[event.date] ??= []).add(
@@ -1120,7 +1193,7 @@ class _CalendarHomeState extends State<CalendarHome>
             ),
           );
         }
-        if (!mounted) return;
+        if (!currentAccount()) return;
         await importedEvents.setDeviceSources(
           provider,
           selectedCalendars
@@ -1133,6 +1206,7 @@ class _CalendarHomeState extends State<CalendarHome>
               )
               .toList(),
         );
+        if (!currentAccount()) return;
         importedEvents.replaceProvider(provider, imported);
         return;
       }
@@ -1154,22 +1228,27 @@ class _CalendarHomeState extends State<CalendarHome>
         return;
       }
       final url = await AuthService.instance.calendarImportStart(provider);
-      final result = await FlutterWebAuth2.authenticate(
-        url: url,
-        callbackUrlScheme: 'calendar',
+      if (!currentAccount()) return;
+      final result = await authenticateOAuthBrowser(url: url);
+      if (!currentAccount()) return;
+      final callback = parseCalendarImportCallback(
+        result,
+        provider: provider,
+        webOrigin: kIsWeb ? Uri.base : null,
       );
-      final callback = Uri.parse(result);
-      if (callback.queryParameters['result'] != 'success') {
-        throw AuthException(callback.queryParameters['error'] ?? '연결하지 못했습니다.');
+      if (!callback.success) {
+        throw AuthException(callback.error ?? '연결하지 못했습니다.');
       }
-      if (!mounted) return;
+      if (!currentAccount()) return;
       final calendars = await AuthService.instance.importCalendars(provider);
-      if (!mounted) return;
+      if (!currentAccount()) return;
       await _pickAndImport(provider, calendars);
     } on AuthException catch (error) {
-      if (mounted) await _showCalendarImportError(error.message);
+      if (currentAccount()) await _showCalendarImportError(error.message);
     } catch (_) {
-      if (mounted) await _showCalendarImportError('캘린더 연결을 완료하지 못했습니다.');
+      if (currentAccount()) {
+        await _showCalendarImportError('캘린더 연결을 완료하지 못했습니다.');
+      }
     }
   }
 
@@ -1294,6 +1373,10 @@ class _CalendarHomeState extends State<CalendarHome>
     String provider,
     List<ImportCalendar> calendars,
   ) async {
+    final eventGeneration = _eventStore.accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
+    bool currentAccount() =>
+        _accountIsCurrent(eventGeneration, preferencesGeneration);
     final selected = <ImportCalendar>{...calendars};
     final choices = calendars.length == 1
         ? calendars
@@ -1336,7 +1419,9 @@ class _CalendarHomeState extends State<CalendarHome>
               ),
             ),
           );
-    if (choices == null || choices.isEmpty || !mounted) return;
+    if (choices == null || choices.isEmpty || !mounted || !currentAccount()) {
+      return;
+    }
     final (from, to) = _range;
     final imports = context.read<ImportedEvents>();
     if (provider == 'kakao') {
@@ -1354,7 +1439,7 @@ class _CalendarHomeState extends State<CalendarHome>
           date_utils.parseDateKey(to),
         );
       } on AuthException catch (error) {
-        if (mounted) await _showCalendarImportError(error.message);
+        if (currentAccount()) await _showCalendarImportError(error.message);
       }
       return;
     }
@@ -1367,16 +1452,17 @@ class _CalendarHomeState extends State<CalendarHome>
           date_utils.parseDateKey(from),
           date_utils.parseDateKey(to),
         );
+        if (!currentAccount()) return;
         options.addAll(
           events.map((event) => _ImportEventOption(calendar, event)),
         );
       }
     } on AuthException catch (error) {
-      if (mounted) await _showCalendarImportError(error.message);
+      if (currentAccount()) await _showCalendarImportError(error.message);
       return;
     }
     if (options.isEmpty) {
-      if (!mounted) return;
+      if (!mounted || !currentAccount()) return;
       await showCupertinoDialog<void>(
         context: context,
         builder: (dialogContext) => AppDialog(
@@ -1394,7 +1480,7 @@ class _CalendarHomeState extends State<CalendarHome>
       return;
     }
     final selectedEvents = await _pickEventsToImport(options);
-    if (selectedEvents == null || !mounted) return;
+    if (selectedEvents == null || !currentAccount()) return;
     await imports.saveEventSelection(
       provider,
       options.map(
@@ -1406,6 +1492,7 @@ class _CalendarHomeState extends State<CalendarHome>
             imports.eventKey(provider, option.calendar.id, option.event.id),
       ),
     );
+    if (!currentAccount()) return;
     await imports.refresh(
       provider,
       choices,
@@ -1536,6 +1623,7 @@ class _CalendarHomeState extends State<CalendarHome>
   }) async {
     if (!isMovableEvent(event)) return;
     final store = context.read<EventStore>();
+    final generation = store.accountGeneration;
     final source = _seriesSource(store, event);
     final delta = DateTime.utc(date.year, date.month, date.day)
         .difference(
@@ -1589,9 +1677,11 @@ class _CalendarHomeState extends State<CalendarHome>
       );
     }
     final saved = await store.saveEvent(moved);
+    if (!mounted || generation != store.accountGeneration) return;
     _hoveredEvent = null; // the hovered copy is now stale
     _lastEventId = saved.id;
     await _syncToEventKit(store, saved);
+    if (!mounted || generation != store.accountGeneration) return;
     await _refreshLiveActivity();
   }
 
@@ -1679,6 +1769,7 @@ class _CalendarHomeState extends State<CalendarHome>
 
   Future<void> _quickCreate(QuickEvent quick) async {
     final store = context.read<EventStore>();
+    final generation = store.accountGeneration;
     final date = quick.date!;
     final saved = await store.saveEvent(
       CalendarEvent(
@@ -1690,9 +1781,11 @@ class _CalendarHomeState extends State<CalendarHome>
         color: colorToHex(palette[0].value),
       ),
     );
+    if (!mounted || generation != store.accountGeneration) return;
     _lastEventId = saved.id;
     _selectDay(date);
     await _syncToEventKit(store, saved);
+    if (!mounted || generation != store.accountGeneration) return;
     await _refreshLiveActivity();
   }
 
@@ -1856,6 +1949,10 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _openEdit(CalendarEvent event) async {
+    final eventGeneration = _eventStore.accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
+    bool currentAccount() =>
+        _accountIsCurrent(eventGeneration, preferencesGeneration);
     _lastEventId = event.seriesId ?? event.id;
     if (event.id.startsWith('import:')) {
       final localDraft = CalendarEvent(
@@ -1874,10 +1971,14 @@ class _CalendarHomeState extends State<CalendarHome>
         date: date_utils.parseDateKey(localDraft.date),
         time: localDraft.time,
         syncToSystem: false,
-        onBeforeSave: () =>
-            context.read<ImportedEvents>().hideImportedEvent(event),
-        onDelete: () async {
+        onBeforeSave: () async {
+          if (!currentAccount()) return;
           await context.read<ImportedEvents>().hideImportedEvent(event);
+        },
+        onDelete: () async {
+          if (!currentAccount()) return;
+          await context.read<ImportedEvents>().hideImportedEvent(event);
+          if (!currentAccount()) return;
           await _refreshLiveActivity();
         },
       );
@@ -1898,10 +1999,13 @@ class _CalendarHomeState extends State<CalendarHome>
       date: date_utils.parseDateKey(resolved.date),
       time: resolved.time,
       onDelete: () async {
+        if (!currentAccount()) return;
         if (resolved.systemEventId != null) {
           await EventKit.deleteEvent(resolved.systemEventId!);
         }
+        if (!currentAccount()) return;
         await store.deleteEvent(resolved.date, resolved.id);
+        if (!currentAccount()) return;
         await _refreshLiveActivity();
       },
     );
@@ -1916,6 +2020,11 @@ class _CalendarHomeState extends State<CalendarHome>
     Future<void> Function()? onBeforeSave,
     Future<void> Function()? onDelete,
   }) async {
+    final store = context.read<EventStore>();
+    final eventGeneration = store.accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
+    bool currentAccount() =>
+        _accountIsCurrent(eventGeneration, preferencesGeneration);
     if (draft == null && newEventDuration != null) {
       draft = CalendarEvent(
         id: '',
@@ -1929,7 +2038,6 @@ class _CalendarHomeState extends State<CalendarHome>
     final editing =
         draft != null && !(newEventDuration != null && draft.id.isEmpty);
     if (useDesktopLayout) {
-      final store = context.read<EventStore>();
       final panelKey = UniqueKey();
       void closePanel() {
         if (mounted && _eventSidePanel?.key == panelKey) {
@@ -1950,15 +2058,20 @@ class _CalendarHomeState extends State<CalendarHome>
           initialDate: date,
           initialTime: time,
           onSave: (event) async {
+            if (!currentAccount()) return;
             await onBeforeSave?.call();
+            if (!currentAccount()) return;
             final saved = await store.saveEvent(event);
+            if (!currentAccount()) return;
             if (syncToSystem) await _syncToEventKit(store, saved);
+            if (!currentAccount()) return;
             await _refreshLiveActivity();
             closePanel();
           },
           onDelete: onDelete == null
               ? null
               : () async {
+                  if (!currentAccount()) return;
                   await onDelete();
                   closePanel();
                 },
@@ -1968,8 +2081,7 @@ class _CalendarHomeState extends State<CalendarHome>
     }
     _collapseAgenda();
     await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-    final store = context.read<EventStore>();
+    if (!mounted || !currentAccount()) return;
     await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -2003,15 +2115,20 @@ class _CalendarHomeState extends State<CalendarHome>
                   initialDate: date,
                   initialTime: time,
                   onSave: (event) async {
+                    if (!currentAccount()) return;
                     await onBeforeSave?.call();
+                    if (!currentAccount()) return;
                     final saved = await store.saveEvent(event);
+                    if (!currentAccount()) return;
                     if (syncToSystem) await _syncToEventKit(store, saved);
+                    if (!currentAccount()) return;
                     await _refreshLiveActivity();
                     if (dialogContext.mounted) Navigator.pop(dialogContext);
                   },
                   onDelete: onDelete == null
                       ? null
                       : () async {
+                          if (!currentAccount()) return;
                           await onDelete();
                           if (dialogContext.mounted) {
                             Navigator.pop(dialogContext);
@@ -2027,18 +2144,28 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _syncToEventKit(EventStore store, CalendarEvent event) async {
+    final generation = store.accountGeneration;
+    bool currentAccount() => mounted && generation == store.accountGeneration;
     if (!_sync.isSupported) return;
     if (!await EventKit.isAvailable()) return;
+    if (!currentAccount()) return;
     if (!await EventKit.requestAccess()) return;
+    if (!currentAccount()) return;
     if (event.systemEventId != null) {
       await EventKit.updateEvent(event);
     } else {
       final identifier = await EventKit.createEvent(event);
+      if (!currentAccount()) return;
       if (identifier != null) {
         await store.saveEvent(event.copyWith(systemEventId: identifier));
       }
     }
   }
+
+  bool _accountIsCurrent(int eventGeneration, int preferencesGeneration) =>
+      mounted &&
+      eventGeneration == _eventStore.accountGeneration &&
+      preferencesGeneration == AccountPreferences.instance.accountGeneration;
 
   static const _onboardingKey = 'onboarding.completed.v1';
 
@@ -2800,11 +2927,7 @@ class _AccountDrawer extends StatelessWidget {
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  Icons.add,
-                  size: 20,
-                  color: theme.textSecondary,
-                ),
+                leading: Icon(Icons.add, size: 20, color: theme.textSecondary),
                 title: const Text('구독 추가하기', style: TextStyle(fontSize: 13)),
                 onTap: onAddSubscription,
               ),

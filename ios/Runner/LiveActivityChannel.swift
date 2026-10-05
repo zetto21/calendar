@@ -53,11 +53,13 @@ final class LiveActivityChannel {
       result(nil)
     case "start", "update", "schedule":
       guard let args = call.arguments as? [String: Any],
-            let eventID = args["eventID"] as? String, !eventID.isEmpty,
+            let eventID = args["eventID"] as? String, !eventID.isEmpty, eventID.utf8.count <= 512,
             let title = args["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            let color = args["color"] as? String,
+            title.utf8.count <= 4096, let color = args["color"] as? String, color.utf8.count <= 16,
             let startValue = args["start"] as? NSNumber,
-            let endValue = args["end"] as? NSNumber else {
+            let endValue = args["end"] as? NSNumber,
+            startValue.doubleValue.isFinite, endValue.doubleValue.isFinite,
+            startValue.doubleValue >= -62135596800, endValue.doubleValue <= 253402300799 else {
         result(FlutterError(code: "invalid", message: "일정 정보를 확인해 주세요.", details: nil)); return
       }
       let start = Date(timeIntervalSince1970: startValue.doubleValue)

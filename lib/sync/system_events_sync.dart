@@ -18,9 +18,11 @@ class SystemEventsSync {
 
   Future<void> sync(DateTime rangeFrom, DateTime rangeTo) async {
     if (!isSupported) return;
+    final generation = store.accountGeneration;
     final available = await EventKit.isAvailable();
     if (!available) return;
     final native = await EventKit.fetchEvents(rangeFrom, rangeTo);
+    if (generation != store.accountGeneration) return;
     if (native.isEmpty) return;
     final byId = {for (final e in native) e.systemEventId: e};
 
@@ -78,7 +80,7 @@ class SystemEventsSync {
       next.putIfAbsent(entry.key, () => []).addAll(updated);
     }
     if (changed) {
-      await store.replaceAll(next);
+      await store.replaceAll(next, expectedAccountGeneration: generation);
     }
   }
 }

@@ -30,12 +30,14 @@ class ImportedEvents extends ChangeNotifier {
   Map<String, List<ImportCalendar>> get sources => _sources;
 
   Future<void> load() async {
-    _accountGeneration++;
+    final generation = ++_accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
     _sources.clear();
     _visibility.clear();
     _excludedEvents.clear();
     _events = const {};
     final raw = await AccountPreferences.instance.get(_sourcesKey) as String?;
+    if (!_isCurrent(generation, preferencesGeneration)) return;
     if (raw == null) return;
     try {
       final saved = Map<String, dynamic>.from(jsonDecode(raw) as Map);
@@ -58,19 +60,26 @@ class ImportedEvents extends ChangeNotifier {
           _sources[key] = calendars;
         } else {
           final seenIds = existing.map((calendar) => calendar.id).toSet();
-          existing.addAll(calendars.where((calendar) => seenIds.add(calendar.id)));
+          existing.addAll(
+            calendars.where((calendar) => seenIds.add(calendar.id)),
+          );
         }
       }
       final visibility = await AccountPreferences.instance.get(_visibilityKey);
+      if (!_isCurrent(generation, preferencesGeneration)) return;
       if (visibility != null) {
         _visibility.addAll(
           Map<String, dynamic>.from(jsonDecode(visibility as String) as Map)
-              .map((key, value) => MapEntry(_migrateDeviceVisibilityKey(key), value as bool)),
+              .map(
+                (key, value) =>
+                    MapEntry(_migrateDeviceVisibilityKey(key), value as bool),
+              ),
         );
       }
       final excluded = await AccountPreferences.instance.get(
         _excludedEventsKey,
       );
+      if (!_isCurrent(generation, preferencesGeneration)) return;
       if (excluded != null) {
         _excludedEvents.addAll(
           (jsonDecode(excluded as String) as List).map(
@@ -80,15 +89,24 @@ class ImportedEvents extends ChangeNotifier {
       }
       if (migratedDeviceSources) {
         await _persistSources();
+        if (!_isCurrent(generation, preferencesGeneration)) return;
         await AccountPreferences.instance.set(
           _visibilityKey,
           jsonEncode(_visibility),
         );
       }
     } catch (_) {
-      _sources.clear();
+      if (_isCurrent(generation, preferencesGeneration)) {
+        _sources.clear();
+        _visibility.clear();
+        _excludedEvents.clear();
+      }
     }
   }
+
+  bool _isCurrent(int generation, int preferencesGeneration) =>
+      generation == _accountGeneration &&
+      preferencesGeneration == AccountPreferences.instance.accountGeneration;
 
   /// Apple/네이버 기기 캘린더는 과거에 별도 provider로 저장되었지만, 이제는
   /// 하나의 '기기에서 가져오기'(`device`) 연동으로 합쳐졌다.
@@ -178,6 +196,8 @@ class ImportedEvents extends ChangeNotifier {
 
   /// Removes a calendar connection and all read-only events it contributed.
   Future<void> disconnect(String provider, String calendarId) async {
+    final generation = _accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
     final calendars = _sources[provider];
     if (calendars == null) return;
     final remaining = calendars.where((item) => item.id != calendarId).toList();
@@ -194,6 +214,7 @@ class ImportedEvents extends ChangeNotifier {
             .toList(),
     }..removeWhere((_, items) => items.isEmpty);
     await _persistSources();
+    if (!_isCurrent(generation, preferencesGeneration)) return;
     await AccountPreferences.instance.set(
       _visibilityKey,
       jsonEncode(_visibility),
@@ -225,14 +246,15 @@ class ImportedEvents extends ChangeNotifier {
     DateTime to,
   ) async {
     final generation = _accountGeneration;
+    final preferencesGeneration = AccountPreferences.instance.accountGeneration;
     if (provider == 'kbo') {
-      await _refreshKbo(generation, calendars, from, to);
+      await _refreshKbo(generation, preferencesGeneration, calendars, from, to);
       return;
     }
     if (provider == 'kakao' &&
         calendars.any((calendar) => calendar.id == 'all')) {
       calendars = await AuthService.instance.importCalendars(provider);
-      if (generation != _accountGeneration) return;
+      if (!_isCurrent(generation, preferencesGeneration)) return;
       if (calendars.any((calendar) => calendar.id == 'all')) {
         throw AuthException('톡캘린더 목록을 가져오려면 서버 업데이트가 필요합니다.');
       }
@@ -258,6 +280,7 @@ class ImportedEvents extends ChangeNotifier {
         from,
         to,
       );
+      if (!_isCurrent(generation, preferencesGeneration)) return;
       for (final item in items) {
         // Talk calendars are connected as a whole. Older per-event import
         // selections must not suppress their future synchronizations.
@@ -267,6 +290,16 @@ class ImportedEvents extends ChangeNotifier {
             )) {
           continue;
         }
+        // Imported identifiers include provider/calendar prefixes and can be
+        // longer than writable cloud event IDs; validate their display fields.
+        CalendarEvent.fromJson({
+          'id': 'imported-validation',
+          'date': item.date,
+          'title': item.title,
+          'time': item.time,
+          'duration': item.duration,
+          'color': item.color,
+        });
         final event = CalendarEvent(
           id: 'import:$provider:${calendar.id}:${item.id}',
           date: item.date,
@@ -280,10 +313,10 @@ class ImportedEvents extends ChangeNotifier {
         (next[event.date] ??= []).add(event);
       }
     }
-    if (generation != _accountGeneration) return;
+    if (!_isCurrent(generation, preferencesGeneration)) return;
     _sources[provider] = calendars;
     await _persistSources();
-    if (generation != _accountGeneration) return;
+    if (!_isCurrent(generation, preferencesGeneration)) return;
     replaceProvider(provider, next);
   }
 
@@ -292,12 +325,13 @@ class ImportedEvents extends ChangeNotifier {
   /// duplicating) it once per subscribed team.
   Future<void> _refreshKbo(
     int generation,
+    int preferencesGeneration,
     List<ImportCalendar> calendars,
     DateTime from,
     DateTime to,
   ) async {
     final games = await KboScheduleService.fetchSchedule(from, to);
-    if (generation != _accountGeneration) return;
+    if (!_isCurrent(generation, preferencesGeneration)) return;
     final colorByCode = {for (final c in calendars) c.id: c.color};
     final next = <String, List<CalendarEvent>>{};
     for (final game in games) {
@@ -305,9 +339,7 @@ class ImportedEvents extends ChangeNotifier {
       final awaySubscribed = colorByCode.containsKey(game.awayCode);
       if (!homeSubscribed && !awaySubscribed) continue;
       final primaryCode = homeSubscribed ? game.homeCode : game.awayCode;
-      if (_excludedEvents.contains(
-        eventKey('kbo', primaryCode, game.gameId),
-      )) {
+      if (_excludedEvents.contains(eventKey('kbo', primaryCode, game.gameId))) {
         continue;
       }
       final event = CalendarEvent(
@@ -332,10 +364,10 @@ class ImportedEvents extends ChangeNotifier {
       );
       (next[event.date] ??= []).add(event);
     }
-    if (generation != _accountGeneration) return;
+    if (!_isCurrent(generation, preferencesGeneration)) return;
     _sources['kbo'] = calendars;
     await _persistSources();
-    if (generation != _accountGeneration) return;
+    if (!_isCurrent(generation, preferencesGeneration)) return;
     replaceProvider('kbo', next);
   }
 }

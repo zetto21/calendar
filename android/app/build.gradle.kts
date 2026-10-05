@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Keep production artifacts separate from the publicly known debug key.
+// A missing local signing file produces an unsigned release artifact.
+val releaseSigningFile = rootProject.file("key.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningFile.exists()) {
+        releaseSigningFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -32,11 +43,23 @@ android {
         manifestPlaceholders["appAuthRedirectScheme"] = "calendar"
     }
 
+    signingConfigs {
+        if (releaseSigningFile.exists()) {
+            create("release") {
+                fun requiredSigningProperty(name: String): String =
+                    releaseSigningProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+                        ?: throw GradleException("Release signing configuration is incomplete: $name")
+                keyAlias = requiredSigningProperty("keyAlias")
+                keyPassword = requiredSigningProperty("keyPassword")
+                storeFile = rootProject.file(requiredSigningProperty("storeFile"))
+                storePassword = requiredSigningProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }

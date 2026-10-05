@@ -1,9 +1,10 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../logic/security_urls.dart';
 import 'auth_service.dart';
+import 'secure_http.dart';
 
 class AppUpdateInfo {
   final String version;
@@ -17,11 +18,13 @@ class AppUpdateService {
 
   static Future<AppUpdateInfo?> check() async {
     try {
-      final response = await http
-          .get(Uri.parse('${AuthService.apiBase}/api/app-version'))
-          .timeout(const Duration(seconds: 5));
+      final response = await secureHttpRequest(
+        Uri.parse('${AuthService.apiBase}/api/app-version'),
+        timeout: const Duration(seconds: 5),
+        maxResponseBytes: 64 << 10,
+      );
       if (response.statusCode != 200) return null;
-      final body = jsonDecode(response.body);
+      final body = decodeBoundedJson(utf8.decode(response.bodyBytes));
       if (body is! Map<String, dynamic>) return null;
       final latestVersion = body['version'] as String?;
       if (latestVersion == null || latestVersion.trim().isEmpty) return null;
@@ -29,7 +32,7 @@ class AppUpdateService {
       final currentVersion = (await PackageInfo.fromPlatform()).version;
       if (!_versionsDiffer(latestVersion, currentVersion)) return null;
       final rawUpdateUrl = (body['updateUrl'] as String?)?.trim();
-      final updateUrl = rawUpdateUrl?.isEmpty == true ? null : rawUpdateUrl;
+      final updateUrl = secureHttpsUri(rawUpdateUrl)?.toString();
       return AppUpdateInfo(version: latestVersion, updateUrl: updateUrl);
     } catch (_) {
       // A failed update check must never block the calendar from opening.

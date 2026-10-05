@@ -38,8 +38,10 @@ class MainActivity : FlutterActivity() {
                         val title = call.argument<String>("title")
                         val start = call.argument<Number>("start")?.toDouble()
                         val end = call.argument<Number>("end")?.toDouble()
-                        if (id.isNullOrBlank() || title.isNullOrBlank() || start == null || end == null ||
-                            !start.isFinite() || !end.isFinite() || end <= start || end * 1000 <= System.currentTimeMillis()) {
+                        if (id.isNullOrBlank() || id.length > 512 || title.isNullOrBlank() || title.length > 4096 ||
+                            start == null || end == null || !start.isFinite() || !end.isFinite() ||
+                            start < -62135596800.0 || end > 253402300799.0 ||
+                            end <= start || end * 1000 <= System.currentTimeMillis()) {
                             result.error("invalid_event", "진행 중이거나 곧 시작하는 일정을 선택해 주세요.", null)
                         } else if (!manager.areNotificationsEnabled()) {
                             requestNotificationPermissionIfNeeded()
@@ -49,13 +51,13 @@ class MainActivity : FlutterActivity() {
                         } else {
                             try {
                                 val intent = Intent(this, LiveUpdateService::class.java)
-                                    .putExtra("eventID", id).putExtra("title", title)
-                                    .putExtra("color", call.argument<String>("color"))
+                                    .putExtra("eventID", id).putExtra("title", title.take(120))
+                                    .putExtra("color", call.argument<String>("color")?.take(16))
                                     .putExtra("start", (start * 1000).toLong()).putExtra("end", (end * 1000).toLong())
                                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
                                 result.success(null)
                             } catch (error: RuntimeException) {
-                                result.error("live_update_failed", "앱을 연 상태에서 다시 시작해 주세요.", error.message)
+                                result.error("live_update_failed", "앱을 연 상태에서 다시 시작해 주세요.", null)
                             }
                         }
                     }
