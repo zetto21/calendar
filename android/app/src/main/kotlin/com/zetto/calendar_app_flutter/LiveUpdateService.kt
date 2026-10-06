@@ -80,7 +80,10 @@ class LiveUpdateService : Service() {
                 now < end -> end
                 else -> lingerUntil
             }
-            handler.postDelayed(this, minOf(15_000L, (nextBoundary - now).coerceAtLeast(1L)))
+            // Samsung's compact Now bar does not render the platform chronometer.
+            // Refresh its textual countdown; other devices use the system timer.
+            val interval = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true) && now < end) 1_000L else 15_000L
+            handler.postDelayed(this, minOf(interval, (nextBoundary - now).coerceAtLeast(1L)))
         }
     }
 
@@ -151,6 +154,14 @@ class LiveUpdateService : Service() {
         val format = SimpleDateFormat("a h:mm", Locale.KOREAN)
         val range = "${format.format(Date(start))} – ${format.format(Date(end))}"
         val timeText = if (finished) "일정이 종료되었습니다" else range
+        val remainingSeconds = (((if (started) end else start) - now + 999) / 1000).coerceAtLeast(0)
+        val countdown = if (remainingSeconds >= 3600) {
+            String.format(Locale.ROOT, "%d:%02d:%02d", remainingSeconds / 3600, remainingSeconds / 60 % 60, remainingSeconds % 60)
+        } else {
+            String.format(Locale.ROOT, "%02d:%02d", remainingSeconds / 60, remainingSeconds % 60)
+        }
+        val samsung = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+        val compactText = if (finished) timeText else if (started) "남은 시간 $countdown" else "시작까지 $countdown"
         val progress = (((now - start).toDouble() / (end - start).coerceAtLeast(1)) * 1000).toInt().coerceIn(0, 1000)
         val progressValue = if (finished) 1000 else progress
 
@@ -193,7 +204,6 @@ class LiveUpdateService : Service() {
             .setCategory(Notification.CATEGORY_EVENT)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setContentIntent(open).setDeleteIntent(stop)
-            .addAction(Notification.Action.Builder(null, "실시간 업데이트 종료", stop).build())
         if (Build.VERSION.SDK_INT >= 26) builder.setTimeoutAfter((end + LINGER_MS - now).coerceAtLeast(1))
         if (Build.VERSION.SDK_INT >= 36) {
             val remainingColor = Color.argb(70, 128, 128, 128)
@@ -202,20 +212,25 @@ class LiveUpdateService : Service() {
             if (progressValue < 1000) segments += Notification.ProgressStyle.Segment(1000 - progressValue).setColor(remainingColor)
             // Status-bar chips require a standard (non-RemoteViews) notification.
             builder.setSubText(statusText)
-                .setContentText(timeText)
+                .setContentText(if (samsung) compactText else timeText)
                 .addExtras(android.os.Bundle().apply { putBoolean("android.requestPromotedOngoing", true) })
                 .setStyle(Notification.ProgressStyle()
                     .setStyledByProgress(false)
                     .setProgress(progressValue)
                     .setProgressSegments(segments)
-                    .setProgressStartIcon(Icon.createWithResource(this, R.drawable.ic_status_upcoming).setTint(accentColor))
-                    .setProgressEndIcon(Icon.createWithResource(this, R.drawable.ic_status_done).setTint(if (finished) GREEN else Color.GRAY))
                     .setProgressTrackerIcon(Icon.createWithResource(this, if (finished) R.drawable.ic_status_done else R.drawable.ic_tracker_dot).setTint(accentColor)))
             if (finished) {
                 builder.setShortCriticalText("종료")
             } else {
-                builder.setWhen(if (started) end else start).setShowWhen(true)
-                    .setUsesChronometer(true).setChronometerCountDown(true)
+                if (samsung) {
+                    // Samsung's expanded card also renders the header chronometer.
+                    // Keep the single countdown in contentText and the compact chip.
+                    builder.setShortCriticalText(countdown)
+                        .setShowWhen(false).setUsesChronometer(false)
+                } else {
+                    builder.setWhen(if (started) end else start).setShowWhen(true)
+                        .setUsesChronometer(true).setChronometerCountDown(true)
+                }
             }
         } else {
             builder.setStyle(Notification.DecoratedCustomViewStyle())

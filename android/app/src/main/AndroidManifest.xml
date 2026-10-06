@@ -11,13 +11,20 @@
     <application
         android:label="일상 캘린더"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_nowbar"
+        android:roundIcon="@mipmap/ic_nowbar"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false">
+        <!-- Samsung exposes the app's Live notifications / Now bar controls. -->
+        <meta-data
+            android:name="com.samsung.android.support.ongoing_activity"
+            android:value="true"/>
         <activity
             android:name=".MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

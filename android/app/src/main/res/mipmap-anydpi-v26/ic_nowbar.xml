@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Explicit transparency prevents legacy-icon background synthesis.
+     The foreground fits inside the adaptive mask's visible area. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/transparent" />
+    <foreground>
+        <inset android:inset="18dp" android:drawable="@drawable/ic_nowbar_app" />
+    </foreground>
+</adaptive-icon>

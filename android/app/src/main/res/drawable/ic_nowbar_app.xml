@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keep the rounded gradient badge, with transparent space outside it. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <inset android:inset="5.1%">
+            <shape android:shape="rectangle">
+                <corners android:radius="9dp" />
+                <gradient android:angle="270"
+                    android:startColor="#54C5F8"
+                    android:centerColor="#329FFB"
+                    android:endColor="#2587FC" />
+            </shape>
+        </inset>
+    </item>
+    <item>
+        <inset android:inset="20%">
+            <bitmap android:src="@drawable/ic_launcher_foreground_image"
+                android:gravity="fill" />
+        </inset>
+    </item>
+</layer-list>
