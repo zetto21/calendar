@@ -89,6 +89,24 @@ List<LiveCalendarEvent> liveActivityCandidates(
   return candidates;
 }
 
+List<LiveCalendarEvent> automaticLiveEvents(
+  EventMap events,
+  tz.Location zone,
+  DateTime now,
+) {
+  final today = zonedParts(now, zone).date;
+  return liveActivityCandidates(
+        events,
+        zone,
+        now,
+        lookAhead: const Duration(hours: 24),
+      )
+      .where(
+        (event) => zonedParts(event.start, zone).date.compareTo(today) <= 0,
+      )
+      .toList(growable: false);
+}
+
 class LiveActivity {
   static const _channel = MethodChannel('calendar_app/live_activity');
   static bool get isIOS =>
@@ -144,6 +162,10 @@ class LiveActivity {
 
   static Future<void> start(LiveCalendarEvent event) =>
       _channel.invokeMethod('start', event.payload);
+  static Future<void> syncAutomatic(List<LiveCalendarEvent> events) =>
+      _channel.invokeMethod('syncAutomatic', {
+        'events': events.map((event) => event.payload).toList(),
+      });
   static Future<void> schedule(LiveCalendarEvent event) =>
       _channel.invokeMethod('schedule', event.payload);
   static Future<void> update(LiveCalendarEvent event) =>

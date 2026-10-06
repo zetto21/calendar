@@ -12,7 +12,7 @@
         android:label="일상 캘린더"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_nowbar"
-        android:roundIcon="@mipmap/ic_nowbar"
+        android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

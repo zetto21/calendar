@@ -16,9 +16,10 @@ import android.widget.RemoteViews
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
 
 /**
- * A user-selected event timer, drawn as a custom card that mirrors the iOS
+ * An automatically selected event timer, drawn as a custom card that mirrors the iOS
  * Live Activity: a colored status row, title + live countdown, time range
  * and a progress bar. The system chronometer ticks without Dart.
  */
@@ -27,6 +28,7 @@ class LiveUpdateService : Service() {
         const val CHANNEL = "calendar_live_updates"
         const val ID = 4200
         const val STOP = "calendar.live_update.STOP"
+        private const val AUTO = "calendar.live_update.AUTO"
         private const val PREFS = "calendar_live_update"
 
         /** How long the finished state lingers, matching the iOS Activity's staleDate. */
@@ -38,7 +40,7 @@ class LiveUpdateService : Service() {
             if (Build.VERSION.SDK_INT >= 26) {
                 context.getSystemService(NotificationManager::class.java).createNotificationChannel(
                     NotificationChannel(CHANNEL, "일정 실시간 업데이트", NotificationManager.IMPORTANCE_LOW).apply {
-                        description = "선택한 일정의 남은 시간과 진행 상태를 표시합니다."
+                        description = "오늘 일정의 남은 시간과 진행 상태를 자동으로 표시합니다."
                         setShowBadge(false)
                     }
                 )
@@ -56,11 +58,34 @@ class LiveUpdateService : Service() {
             context.stopService(Intent(context, LiveUpdateService::class.java))
             context.getSystemService(NotificationManager::class.java).cancel(ID)
         }
+
+        fun validAutomaticEvents(events: List<Map<String, Any?>>): Boolean = events.all { event ->
+            val id = event["eventID"] as? String
+            val title = event["title"] as? String
+            val start = (event["start"] as? Number)?.toDouble()
+            val end = (event["end"] as? Number)?.toDouble()
+            !id.isNullOrBlank() && id.length <= 512 && !title.isNullOrBlank() && title.length <= 4096 &&
+                start != null && end != null && start.isFinite() && end.isFinite() &&
+                start >= -62135596800.0 && end <= 253402300799.0 && end > start &&
+                (event["color"] == null || event["color"] is String)
+        }
+
+        fun syncAutomatic(context: Context, events: List<Map<String, Any?>>) {
+            if (events.isEmpty()) {
+                end(context)
+                return
+            }
+            context.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString("automaticEvents", JSONArray(events).toString()).apply()
+            val intent = Intent(context, LiveUpdateService::class.java).setAction(AUTO)
+            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+        }
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
+            selectAutomaticEvent()
             val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
             val now = System.currentTimeMillis()
             val end = prefs.getLong("end", 0)
@@ -89,6 +114,30 @@ class LiveUpdateService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun selectAutomaticEvent() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val raw = prefs.getString("automaticEvents", null) ?: return
+        val now = System.currentTimeMillis()
+        val events = try { JSONArray(raw) } catch (_: Exception) { return }
+        val next = (0 until events.length()).map { events.getJSONObject(it) }
+            .filter { (it.getDouble("end") * 1000).toLong() > now }
+            .sortedWith(compareBy(
+                { if (it.getDouble("start") * 1000 <= now) 0 else 1 },
+                { it.getDouble("start") }
+            )).firstOrNull() ?: return
+        if (prefs.getString("eventID", null) == next.getString("eventID") &&
+            prefs.getString("title", null) == next.getString("title").take(120) &&
+            prefs.getString("color", null) == next.optString("color", "#3B82F6").take(16) &&
+            prefs.getLong("start", 0) == (next.getDouble("start") * 1000).toLong() &&
+            prefs.getLong("end", 0) == (next.getDouble("end") * 1000).toLong()) return
+        prefs.edit()
+            .putString("eventID", next.getString("eventID"))
+            .putString("title", next.getString("title").take(120))
+            .putString("color", next.optString("color", "#3B82F6").take(16))
+            .putLong("start", (next.getDouble("start") * 1000).toLong())
+            .putLong("end", (next.getDouble("end") * 1000).toLong()).apply()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
             finish()
@@ -96,6 +145,7 @@ class LiveUpdateService : Service() {
         }
         createChannel(this)
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (intent?.action == AUTO || intent == null) selectAutomaticEvent()
         if (intent?.hasExtra("eventID") == true) {
             val start = intent.getLongExtra("start", 0)
             val end = intent.getLongExtra("end", 0)
@@ -211,8 +261,8 @@ class LiveUpdateService : Service() {
             if (progressValue > 0) segments += Notification.ProgressStyle.Segment(progressValue).setColor(accentColor)
             if (progressValue < 1000) segments += Notification.ProgressStyle.Segment(1000 - progressValue).setColor(remainingColor)
             // Status-bar chips require a standard (non-RemoteViews) notification.
-            builder.setSubText(statusText)
-                .setContentText(if (samsung) compactText else timeText)
+            builder.setSubText(if (samsung) statusText else null)
+                .setContentText(if (samsung) compactText else statusText)
                 .addExtras(android.os.Bundle().apply { putBoolean("android.requestPromotedOngoing", true) })
                 .setStyle(Notification.ProgressStyle()
                     .setStyledByProgress(false)

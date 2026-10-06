@@ -33,6 +33,22 @@ class MainActivity : FlutterActivity() {
                             (Build.VERSION.SDK_INT < 26 || manager.getNotificationChannel(LiveUpdateService.CHANNEL).importance != NotificationManager.IMPORTANCE_NONE)),
                         "eventIDs" to LiveUpdateService.activeIDs(this),
                     ))
+                    "syncAutomatic" -> {
+                        val events = call.argument<List<Map<String, Any?>>>("events")
+                        if (events == null || events.size > 500 || !LiveUpdateService.validAutomaticEvents(events)) {
+                            result.error("invalid_event", "일정 데이터 형식이 올바르지 않습니다.", null)
+                        } else if (!manager.areNotificationsEnabled() ||
+                            (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(LiveUpdateService.CHANNEL)?.importance == NotificationManager.IMPORTANCE_NONE)) {
+                            result.success(null)
+                        } else {
+                            try {
+                                LiveUpdateService.syncAutomatic(this, events)
+                                result.success(null)
+                            } catch (error: RuntimeException) {
+                                result.error("live_update_failed", "앱을 연 상태에서 다시 시도해 주세요.", null)
+                            }
+                        }
+                    }
                     "start", "update" -> {
                         val id = call.argument<String>("eventID")
                         val title = call.argument<String>("title")

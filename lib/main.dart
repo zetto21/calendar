@@ -433,8 +433,7 @@ class _CalendarHomeState extends State<CalendarHome>
     _eventStore.syncSucceeded.addListener(_showEventSyncStatus);
     _eventSyncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-        unawaited(_eventStore.sync());
-        unawaited(_refreshLiveActivity());
+        unawaited(_syncEventsAndLiveActivity());
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _showEventSyncStatus());
@@ -674,6 +673,15 @@ class _CalendarHomeState extends State<CalendarHome>
     lookAhead: lookAhead,
   );
 
+  List<LiveCalendarEvent> _automaticLiveEvents() => automaticLiveEvents(
+    _combineEvents(
+      context.read<EventStore>().events,
+      context.read<ImportedEvents>().events,
+    ),
+    widget.deviceZone,
+    DateTime.now(),
+  );
+
   Future<void> _showLiveActivities() async {
     _scaffoldKey.currentState?.closeDrawer();
     if (LiveActivity.isAndroid) {
@@ -770,102 +778,58 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _showAndroidLiveUpdates() async {
-    try {
-      final status = await LiveActivity.status();
-      if (!mounted) return;
-      if (!status.enabled) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('일정 실시간 업데이트를 사용하려면 알림을 허용해 주세요.'),
-            action: SnackBarAction(
-              label: '알림 설정',
-              onPressed: () {
-                unawaited(LiveActivity.openNotificationSettings());
-              },
-            ),
+    await _refreshLiveActivity();
+    final status = await LiveActivity.status();
+    if (!mounted) return;
+    final candidates = _automaticLiveEvents();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.75,
           ),
-        );
-        return;
-      }
-      final candidates = _liveActivityCandidates();
-      final selected = await showModalBottomSheet<String>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (sheetContext) => SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.75,
-            ),
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-              children: [
-                Text(
-                  '일정 실시간 업데이트',
-                  style: Theme.of(sheetContext).textTheme.titleLarge,
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            children: [
+              Text(
+                '일정 실시간 업데이트',
+                style: Theme.of(sheetContext).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '오늘의 진행 중인 일정과 다음 일정을 자동으로 표시합니다. 일정이 끝나면 다음 일정으로 전환됩니다.',
+              ),
+              const SizedBox(height: 16),
+              if (!status.enabled)
+                FilledButton(
+                  onPressed: () => LiveActivity.openNotificationSettings(),
+                  child: const Text('알림 허용 설정'),
                 ),
-                const SizedBox(height: 8),
-                const Text('선택한 일정의 남은 시간과 진행 상태를 잠금 화면과 알림창에서 확인하세요.'),
-                const SizedBox(height: 16),
-                if (candidates.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Text('진행 중이거나 10분 이내에 시작하는 일정이 없습니다.'),
+              if (candidates.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('오늘 표시할 시간 지정 일정이 없습니다.'),
+                ),
+              for (final event in candidates)
+                ListTile(
+                  leading: const Icon(Icons.timelapse),
+                  title: Text(event.event.title),
+                  subtitle: Text(
+                    '${TimeOfDay.fromDateTime(event.start.toLocal()).format(sheetContext)} – ${TimeOfDay.fromDateTime(event.end.toLocal()).format(sheetContext)}',
                   ),
-                for (final event in candidates)
-                  ListTile(
-                    leading: const Icon(Icons.timelapse),
-                    title: Text(event.event.title),
-                    subtitle: Text(
-                      '${TimeOfDay.fromDateTime(event.start.toLocal()).format(sheetContext)} – ${TimeOfDay.fromDateTime(event.end.toLocal()).format(sheetContext)}',
-                    ),
-                    trailing: status.eventIDs.contains(event.id)
-                        ? const Icon(Icons.check_circle)
-                        : const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.pop(sheetContext, event.id),
-                  ),
-                if (status.eventIDs.isNotEmpty) ...[
-                  const Divider(),
-                  TextButton.icon(
-                    onPressed: () => Navigator.pop(sheetContext, '__end__'),
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: const Text('실시간 업데이트 종료'),
-                  ),
-                ],
-              ],
-            ),
+                  trailing: status.eventIDs.contains(event.id)
+                      ? const Icon(Icons.check_circle)
+                      : null,
+                ),
+            ],
           ),
         ),
-      );
-      if (!mounted || selected == null) return;
-      if (selected == '__end__') {
-        await LiveActivity.end();
-      } else {
-        final matches = _liveActivityCandidates().where(
-          (event) => event.id == selected,
-        );
-        if (matches.isEmpty) return;
-        await LiveActivity.start(matches.first);
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              selected == '__end__'
-                  ? '실시간 업데이트를 종료했습니다.'
-                  : '알림창에 일정 실시간 업데이트를 표시합니다.',
-            ),
-          ),
-        );
-      }
-    } on PlatformException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message ?? '실시간 업데이트를 시작하지 못했습니다.')),
-        );
-      }
-    }
+      ),
+    );
   }
 
   Future<void> _showMacLiveUpdates() async {
@@ -958,12 +922,17 @@ class _CalendarHomeState extends State<CalendarHome>
     try {
       final status = await LiveActivity.status();
       if (!mounted) return;
+      if (LiveActivity.isAndroid) {
+        if (!status.supported || !status.enabled) return;
+        await LiveActivity.syncAutomatic(_automaticLiveEvents());
+        return;
+      }
       final candidates = LiveActivity.isIOS && status.scheduledStartSupported
           ? _liveActivityCandidates(lookAhead: const Duration(hours: 24))
           : _liveActivityCandidates();
       final activeIDs = status.eventIDs.toSet();
-      if (LiveActivity.isAndroid || LiveActivity.isMacOS) {
-        // Android and macOS track only the event explicitly selected by the
+      if (LiveActivity.isMacOS) {
+        // macOS tracks only the event explicitly selected by the
         // user. Stopping or dismissing the notification/menu bar item must
         // not restart it.
         final selected = candidates.where(
@@ -1099,6 +1068,12 @@ class _CalendarHomeState extends State<CalendarHome>
       date_utils.parseDateKey(from),
       date_utils.parseDateKey(to),
     );
+    await _refreshLiveActivity();
+  }
+
+  Future<void> _syncEventsAndLiveActivity() async {
+    await _eventStore.sync();
+    if (mounted) await _refreshLiveActivity();
   }
 
   Future<void> _refreshImported() async {
@@ -1117,6 +1092,7 @@ class _CalendarHomeState extends State<CalendarHome>
         // Preserve the previous import while offline or after a revoked authorization.
       }
     }
+    if (mounted) await _refreshLiveActivity();
   }
 
   Future<void> _refreshAll() async {
