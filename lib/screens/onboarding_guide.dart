@@ -53,7 +53,7 @@ class _OnboardingGuideState extends State<OnboardingGuide> {
       return '진행 중인 일정을 잠금 화면과 다이나믹 아일랜드에서 실시간으로 확인할 수 있어요. 알림을 허용하면 바로 시작할 수 있습니다.';
     }
     if (LiveActivity.isAndroid) {
-      return '오늘의 진행 중인 일정과 다음 일정을 자동으로 표시해요. 알림 권한을 허용하면 알림창과 지원 기기의 Now Bar에서 확인할 수 있습니다.';
+      return '일정 시작 10분 전부터 자동으로 표시해요. 알림 권한을 허용하면 알림창과 지원 기기의 Now Bar에서 확인할 수 있습니다.';
     }
     if (LiveActivity.isMacOS) {
       return '진행 중인 일정을 메뉴 막대에서 실시간으로 확인할 수 있어요. 설정의 "실시간 현황"에서 원하는 일정을 선택해 보세요.';

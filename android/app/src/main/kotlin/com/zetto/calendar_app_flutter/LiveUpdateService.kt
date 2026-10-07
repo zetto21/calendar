@@ -17,6 +17,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * An automatically selected event timer, drawn as a custom card that mirrors the iOS
@@ -29,6 +30,7 @@ class LiveUpdateService : Service() {
         const val ID = 4200
         const val STOP = "calendar.live_update.STOP"
         private const val AUTO = "calendar.live_update.AUTO"
+        const val ALARM = "calendar.live_update.ALARM"
         private const val PREFS = "calendar_live_update"
 
         /** How long the finished state lingers, matching the iOS Activity's staleDate. */
@@ -54,6 +56,7 @@ class LiveUpdateService : Service() {
         }
 
         fun end(context: Context) {
+            context.getSystemService(AlarmManager::class.java).cancel(alarmIntent(context))
             context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply()
             context.stopService(Intent(context, LiveUpdateService::class.java))
             context.getSystemService(NotificationManager::class.java).cancel(ID)
@@ -77,8 +80,59 @@ class LiveUpdateService : Service() {
             }
             context.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString("automaticEvents", JSONArray(events).toString()).apply()
+            resumeAutomatic(context)
+        }
+
+        private fun alarmIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
+            context, ID, Intent(context, LiveUpdateScheduleReceiver::class.java).setAction(ALARM),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+        private fun queuedEvents(context: Context): List<JSONObject> {
+            val raw = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getString("automaticEvents", null) ?: return emptyList()
+            return try {
+                val events = JSONArray(raw)
+                (0 until events.length()).map { events.getJSONObject(it) }
+            } catch (_: Exception) { emptyList() }
+        }
+
+        private fun dueEvents(context: Context, now: Long): List<JSONObject> = queuedEvents(context)
+            .filter { LiveUpdateTiming.isDue((it.getDouble("start") * 1000).toLong(), (it.getDouble("end") * 1000).toLong(), now) }
+            .sortedWith(compareBy(
+                { if (it.getDouble("start") * 1000 <= now) 0 else 1 },
+                { it.getDouble("start") }))
+
+        private fun scheduleNext(context: Context) {
+            val manager = context.getSystemService(AlarmManager::class.java)
+            val pending = alarmIntent(context)
+            manager.cancel(pending)
+            val now = System.currentTimeMillis()
+            val next = queuedEvents(context).map { LiveUpdateTiming.displayStart((it.getDouble("start") * 1000).toLong()) }
+                .filter { it > now }.minOrNull() ?: return
+            // Calendar apps use exact alarms for user-visible event reminders.
+            // On Android 12, wait for the user's Alarms & reminders permission.
+            if (Build.VERSION.SDK_INT >= 31 && !manager.canScheduleExactAlarms()) return
+            manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next, pending)
+        }
+
+        fun resumeAutomatic(context: Context) {
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            if (!prefs.contains("automaticEvents")) return
+            scheduleNext(context)
+            val manager = context.getSystemService(NotificationManager::class.java)
+            if (!manager.areNotificationsEnabled()) return
+            if (dueEvents(context, System.currentTimeMillis()).isEmpty()) {
+                prefs.edit().remove("eventID").remove("title").remove("color").remove("start").remove("end").apply()
+                context.stopService(Intent(context, LiveUpdateService::class.java))
+                manager.cancel(ID)
+                return
+            }
             val intent = Intent(context, LiveUpdateService::class.java).setAction(AUTO)
-            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+            } catch (_: RuntimeException) {
+                // Retry when the app resumes; never crash a boot/time-change receiver.
+            }
         }
     }
 
@@ -90,6 +144,10 @@ class LiveUpdateService : Service() {
             val now = System.currentTimeMillis()
             val end = prefs.getLong("end", 0)
             val start = prefs.getLong("start", 0)
+            if (prefs.contains("automaticEvents") && dueEvents(this@LiveUpdateService, now).isEmpty()) {
+                suspendAutomatic()
+                return
+            }
             if (end <= 0 || !notificationsEnabled()) {
                 finish()
                 return
@@ -116,15 +174,9 @@ class LiveUpdateService : Service() {
 
     private fun selectAutomaticEvent() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        val raw = prefs.getString("automaticEvents", null) ?: return
+        if (!prefs.contains("automaticEvents")) return
         val now = System.currentTimeMillis()
-        val events = try { JSONArray(raw) } catch (_: Exception) { return }
-        val next = (0 until events.length()).map { events.getJSONObject(it) }
-            .filter { (it.getDouble("end") * 1000).toLong() > now }
-            .sortedWith(compareBy(
-                { if (it.getDouble("start") * 1000 <= now) 0 else 1 },
-                { it.getDouble("start") }
-            )).firstOrNull() ?: return
+        val next = dueEvents(this, now).firstOrNull() ?: return
         if (prefs.getString("eventID", null) == next.getString("eventID") &&
             prefs.getString("title", null) == next.getString("title").take(120) &&
             prefs.getString("color", null) == next.optString("color", "#3B82F6").take(16) &&
@@ -146,6 +198,10 @@ class LiveUpdateService : Service() {
         createChannel(this)
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         if (intent?.action == AUTO || intent == null) selectAutomaticEvent()
+        if (prefs.contains("automaticEvents") && dueEvents(this, System.currentTimeMillis()).isEmpty()) {
+            suspendAutomatic()
+            return START_NOT_STICKY
+        }
         if (intent?.hasExtra("eventID") == true) {
             val start = intent.getLongExtra("start", 0)
             val end = intent.getLongExtra("end", 0)
@@ -290,7 +346,15 @@ class LiveUpdateService : Service() {
         return builder.build()
     }
 
+    private fun suspendAutomatic() {
+        scheduleNext(this)
+        handler.removeCallbacks(tick)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     private fun finish() {
+        getSystemService(AlarmManager::class.java).cancel(alarmIntent(this))
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply()
         handler.removeCallbacks(tick)
         stopForeground(STOP_FOREGROUND_REMOVE)

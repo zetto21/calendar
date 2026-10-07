@@ -800,15 +800,20 @@ class _CalendarHomeState extends State<CalendarHome>
                 style: Theme.of(sheetContext).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              const Text(
-                '오늘의 진행 중인 일정과 다음 일정을 자동으로 표시합니다. 일정이 끝나면 다음 일정으로 전환됩니다.',
-              ),
+              const Text('일정 시작 10분 전부터 자동으로 표시합니다. 다음 일정도 시작 10분 전에 표시됩니다.'),
               const SizedBox(height: 16),
               if (!status.enabled)
                 FilledButton(
                   onPressed: () => LiveActivity.openNotificationSettings(),
                   child: const Text('알림 허용 설정'),
                 ),
+              if (status.enabled && !status.scheduledStartSupported) ...[
+                const Text('앱을 닫아도 시작 10분 전에 표시하려면 알람 및 리마인더를 허용해 주세요.'),
+                FilledButton(
+                  onPressed: () => LiveActivity.openScheduleSettings(),
+                  child: const Text('예약 알림 허용 설정'),
+                ),
+              ],
               if (candidates.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
@@ -947,7 +952,7 @@ class _CalendarHomeState extends State<CalendarHome>
       for (final event in candidates) {
         if (LiveActivity.isIOS &&
             status.scheduledStartSupported &&
-            event.start.isAfter(DateTime.now())) {
+            event.displayStart.isAfter(DateTime.now())) {
           await LiveActivity.schedule(event);
         } else if (activeIDs.contains(event.id)) {
           await LiveActivity.update(event);

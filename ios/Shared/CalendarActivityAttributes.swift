@@ -8,6 +8,7 @@ struct CalendarActivityAttributes: ActivityAttributes {
     var color: String
     var start: Date
     var end: Date
+    var displayStart: Date? = nil
   }
   var eventID: String
 }

@@ -10,6 +10,7 @@ class LiveCalendarEvent {
   const LiveCalendarEvent(this.event, this.start, this.end);
   final CalendarEvent event;
   final DateTime start, end;
+  DateTime get displayStart => start.subtract(const Duration(minutes: 10));
   String get id => '${event.id}@${event.date}';
   Map<String, dynamic> get payload => {
     'eventID': id,
@@ -121,6 +122,10 @@ class LiveActivity {
 
   static Future<void> openNotificationSettings() async {
     if (isAndroid) await _channel.invokeMethod<void>('openSettings');
+  }
+
+  static Future<void> openScheduleSettings() async {
+    if (isAndroid) await _channel.invokeMethod<void>('openScheduleSettings');
   }
 
   static Future<

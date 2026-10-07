@@ -10,6 +10,29 @@ void main() {
   tz_data.initializeTimeZones();
   final zone = tz.getLocation('Asia/Seoul');
   final now = tz.TZDateTime(zone, 2026, 10, 6, 12);
+  test(
+    'display begins ten minutes before start without shifting event time',
+    () {
+      final item = LiveCalendarEvent(
+        const CalendarEvent(
+          id: 'test',
+          date: '2026-10-06',
+          title: 'test',
+          time: '12:00',
+          duration: 60,
+          color: '#3B82F6',
+        ),
+        now,
+        now.add(const Duration(hours: 1)),
+      );
+      expect(item.displayStart, now.subtract(const Duration(minutes: 10)));
+      expect(item.payload['start'], now.millisecondsSinceEpoch / 1000);
+      expect(
+        item.payload['end'],
+        now.add(const Duration(hours: 1)).millisecondsSinceEpoch / 1000,
+      );
+    },
+  );
   CalendarEvent event(String id, String? time, {String date = '2026-10-06'}) =>
       CalendarEvent(
         id: id,

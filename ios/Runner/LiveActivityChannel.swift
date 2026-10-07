@@ -64,14 +64,23 @@ final class LiveActivityChannel {
       }
       let start = Date(timeIntervalSince1970: startValue.doubleValue)
       let end = Date(timeIntervalSince1970: endValue.doubleValue)
+      let displayStart = start.addingTimeInterval(-600)
       let scheduling = call.method == "schedule"
       guard end > Date(), end > start,
-            scheduling ? start > Date() : start.addingTimeInterval(-600) <= Date() else {
+            scheduling ? displayStart > Date() : displayStart <= Date() else {
         result(FlutterError(code: "not_current", message: "현재 진행 중이거나 10분 안에 시작하는 시간 지정 일정만 표시할 수 있습니다.", details: nil)); return
       }
-      let state = CalendarActivityAttributes.ContentState(title: String(title.prefix(120)), color: color, start: start, end: end)
+      let state = CalendarActivityAttributes.ContentState(title: String(title.prefix(120)), color: color, start: start, end: end, displayStart: displayStart)
       let content = ActivityContent(state: state, staleDate: end.addingTimeInterval(180))
       do {
+        var activatePending = false
+        if #available(iOS 26.0, *), !scheduling, let pending = activities.first(where: {
+          $0.attributes.eventID == eventID && $0.activityState == .pending
+        }) {
+          // Migrate reservations made by an older build at the actual event start.
+          await pending.end(nil, dismissalPolicy: .immediate)
+          activatePending = true
+        }
         if scheduling {
           guard #available(iOS 26.0, *) else {
             result(FlutterError(code: "scheduled_start_unsupported", message: "예약 시작은 iOS 26 이상에서 사용할 수 있습니다.", details: nil)); return
@@ -84,7 +93,7 @@ final class LiveActivityChannel {
           })
           var shouldRequest = true
           if let existing {
-            if existing.activityState == .pending && existing.content.state.start != start {
+            if existing.activityState == .pending && existing.content.state.displayStart != displayStart {
               await existing.end(nil, dismissalPolicy: .immediate)
               shouldRequest = true
             } else if existing.content.state != state {
@@ -101,16 +110,16 @@ final class LiveActivityChannel {
               pushType: nil,
               style: .standard,
               alertConfiguration: AlertConfiguration(
-                title: "일정 시작",
-                body: "\(String(title.prefix(80))) 일정이 시작됩니다.",
+                title: "일정 시작 예정",
+                body: "\(String(title.prefix(80))) 일정이 10분 후 시작됩니다.",
                 sound: .default
               ),
-              start: start
+              start: displayStart
             )
           }
         } else if let existing = activities.first(where: { $0.attributes.eventID == eventID && $0.activityState == .active }) {
           await existing.update(content)
-        } else if call.method == "start" {
+        } else if call.method == "start" || activatePending {
           guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             result(FlutterError(code: "disabled", message: "설정에서 이 앱의 실시간 현황을 허용해 주세요.", details: nil)); return
           }

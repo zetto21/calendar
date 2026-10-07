@@ -32,6 +32,8 @@ class MainActivity : FlutterActivity() {
                         "enabled" to (manager.areNotificationsEnabled() &&
                             (Build.VERSION.SDK_INT < 26 || manager.getNotificationChannel(LiveUpdateService.CHANNEL).importance != NotificationManager.IMPORTANCE_NONE)),
                         "eventIDs" to LiveUpdateService.activeIDs(this),
+                        "scheduledStartSupported" to (Build.VERSION.SDK_INT < 31 ||
+                            getSystemService(android.app.AlarmManager::class.java).canScheduleExactAlarms()),
                     ))
                     "syncAutomatic" -> {
                         val events = call.argument<List<Map<String, Any?>>>("events")
@@ -81,6 +83,13 @@ class MainActivity : FlutterActivity() {
                     "openSettings" -> {
                         startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                             .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
+                        result.success(null)
+                    }
+                    "openScheduleSettings" -> {
+                        if (Build.VERSION.SDK_INT >= 31) {
+                            startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                                .setData(android.net.Uri.parse("package:$packageName")))
+                        }
                         result.success(null)
                     }
                     else -> result.notImplemented()
