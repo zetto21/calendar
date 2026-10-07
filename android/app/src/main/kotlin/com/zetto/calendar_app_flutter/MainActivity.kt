@@ -22,6 +22,18 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "calendar_app/home_widget")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "update") result.notImplemented()
+                else {
+                    try {
+                        CalendarWidgetProvider.save(this, call.argument<String>("snapshot") ?: error("Missing snapshot"))
+                        result.success(null)
+                    } catch (error: Exception) {
+                        result.error("widget_update_failed", "위젯을 업데이트하지 못했습니다.", null)
+                    }
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "calendar_app/live_activity")
             .setMethodCallHandler { call, result ->
                 LiveUpdateService.createChannel(this)
@@ -118,6 +130,11 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        CalendarWidgetProvider.refresh(this)
     }
 
     private fun createNotificationChannel() {

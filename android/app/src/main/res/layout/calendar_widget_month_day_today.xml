@@ -1,0 +1,4 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_day_cell" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center" android:background="@drawable/calendar_widget_today_background">
+<TextView android:id="@+id/widget_day_number" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:textSize="13sp" android:textColor="@color/calendar_widget_accent" android:textStyle="bold"/>
+<TextView android:id="@+id/widget_day_dot" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:text="●" android:textSize="6sp" android:textColor="@color/calendar_widget_accent" android:visibility="invisible"/>
+</LinearLayout>

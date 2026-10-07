@@ -27,6 +27,7 @@ import 'logic/quick_add.dart';
 import 'logic/recurrence.dart';
 import 'logic/security_urls.dart';
 import 'models/calendar_event.dart';
+import 'native/home_widget.dart';
 import 'native/eventkit.dart';
 import 'native/live_activity.dart';
 import 'native/macos_window.dart';
@@ -171,6 +172,8 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _acceptUser(AuthUser? user) async {
     final generation = ++_authGeneration;
+    await CalendarHomeWidget.clear();
+    if (!mounted || generation != _authGeneration) return;
     setState(() => _loading = true);
     final imports = context.read<ImportedEvents>();
     final events = context.read<EventStore>();
@@ -187,6 +190,9 @@ class _AuthGateState extends State<AuthGate> {
     await imports.load();
     if (!mounted || generation != _authGeneration) return;
     await MacosWindow.showCalendar(user != null);
+    if (!mounted || generation != _authGeneration) return;
+    // Account-store notifications can enqueue updates while the old view exits.
+    await CalendarHomeWidget.clear();
     if (!mounted || generation != _authGeneration) return;
     setState(() {
       _user = user;
@@ -366,8 +372,10 @@ class _CalendarHomeState extends State<CalendarHome>
     onSave: _savePersonalCalendar,
     onDelete: _deletePersonalCalendar,
     personalVisible: _showPersonalCalendar,
-    onPersonalVisibilityChanged: (value) =>
-        setState(() => _showPersonalCalendar = value),
+    onPersonalVisibilityChanged: (value) {
+      setState(() => _showPersonalCalendar = value);
+      _refreshHomeWidget();
+    },
   );
   DateTime _anchorDate = DateTime.now();
   DateTime? _rollingWeekStart;
@@ -418,6 +426,7 @@ class _CalendarHomeState extends State<CalendarHome>
   int? _apiHolidaysYear;
   late SystemEventsSync _sync;
   late EventStore _eventStore;
+  late ImportedEvents _widgetImports;
   Timer? _eventSyncTimer;
   VoidCallback _collapseAgenda = () {};
   CalendarEvent? _hoveredEvent;
@@ -431,6 +440,9 @@ class _CalendarHomeState extends State<CalendarHome>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _eventStore = context.read<EventStore>();
+    _widgetImports = context.read<ImportedEvents>();
+    _eventStore.addListener(_refreshHomeWidget);
+    _widgetImports.addListener(_refreshHomeWidget);
     _sync = SystemEventsSync(_eventStore);
     unawaited(_loadPersonalCalendars());
     _eventStore.syncSucceeded.addListener(_showEventSyncStatus);
@@ -473,6 +485,7 @@ class _CalendarHomeState extends State<CalendarHome>
   Future<void> _toggleMenuCalendar(String id, bool visible) async {
     if (id == 'personal') {
       setState(() => _showPersonalCalendar = visible);
+      _refreshHomeWidget();
       return;
     }
     if (id.startsWith('setting:')) {
@@ -925,7 +938,23 @@ class _CalendarHomeState extends State<CalendarHome>
     }
   }
 
+  void _refreshHomeWidget() {
+    if (!mounted) return;
+    final today = DateTime.now();
+    final events = expandEvents(
+      _combineEvents(
+        _showPersonalCalendar ? _eventStore.events : const {},
+        _widgetImports.events,
+      ),
+      date_utils.toDateKey(DateTime(today.year, today.month, 1)),
+      date_utils.toDateKey(DateTime(today.year, today.month + 2, 0)),
+      widget.deviceZone,
+    );
+    unawaited(CalendarHomeWidget.update(events, signedIn: widget.user != null));
+  }
+
   Future<void> _refreshLiveActivity() async {
+    _refreshHomeWidget();
     if (!mounted || !LiveActivity.isSupportedPlatform) return;
     try {
       final status = await LiveActivity.status();
@@ -1043,6 +1072,8 @@ class _CalendarHomeState extends State<CalendarHome>
   @override
   void dispose() {
     _eventSyncTimer?.cancel();
+    _eventStore.removeListener(_refreshHomeWidget);
+    _widgetImports.removeListener(_refreshHomeWidget);
     _eventStore.syncSucceeded.removeListener(_showEventSyncStatus);
     if (LiveActivity.isMacOS) _macMenuChannel.setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);

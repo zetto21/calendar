@@ -533,6 +533,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CalendarLiveActivity/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = CalendarLiveActivity/CalendarLiveActivity.entitlements;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -691,6 +692,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CalendarLiveActivity/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = CalendarLiveActivity/CalendarLiveActivity.entitlements;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -719,6 +721,7 @@
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CalendarLiveActivity/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = CalendarLiveActivity/CalendarLiveActivity.entitlements;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

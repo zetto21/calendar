@@ -4,7 +4,10 @@ import WidgetKit
 
 @main
 struct CalendarLiveActivityBundle: WidgetBundle {
-  var body: some Widget { CalendarLiveActivityWidget() }
+  var body: some Widget {
+    CalendarLiveActivityWidget()
+    CalendarHomeWidget()
+  }
 }
 
 struct CalendarLiveActivityWidget: Widget {
@@ -167,5 +170,87 @@ struct CalendarLiveActivityWidget: Widget {
     let format = Date.FormatStyle(date: .omitted, time: .shortened)
       .locale(Locale(identifier: "ko_KR"))
     return "\(context.state.start.formatted(format)) – \(context.state.end.formatted(format))"
+  }
+}
+
+
+private struct HomeEvent: Decodable {
+  let date: String
+  let title: String
+  let time: String?
+}
+private struct HomeSnapshot: Decodable {
+  let signedIn: Bool
+  let events: [HomeEvent]
+}
+private struct HomeEntry: TimelineEntry {
+  let date: Date
+  let snapshot: HomeSnapshot
+}
+private struct HomeProvider: TimelineProvider {
+  func placeholder(in context: Context) -> HomeEntry {
+    HomeEntry(date: .now, snapshot: HomeSnapshot(signedIn: true, events: []))
+  }
+  func getSnapshot(in context: Context, completion: @escaping (HomeEntry) -> Void) { completion(entry(.now)) }
+  func getTimeline(in context: Context, completion: @escaping (Timeline<HomeEntry>) -> Void) {
+    let now = Date()
+    let entries = (0..<8).compactMap { offset -> HomeEntry? in
+      guard let day = Calendar.current.date(byAdding: .day, value: offset, to: now) else { return nil }
+      return entry(offset == 0 ? now : Calendar.current.startOfDay(for: day))
+    }
+    completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(1800))))
+  }
+  private func entry(_ date: Date) -> HomeEntry {
+    let raw = UserDefaults(suiteName: "group.com.zetto.calendarAppFlutter")?.string(forKey: "calendarWidgetSnapshot") ?? ""
+    let snapshot = raw.data(using: .utf8).flatMap { try? JSONDecoder().decode(HomeSnapshot.self, from: $0) }
+    return HomeEntry(date: date, snapshot: snapshot ?? HomeSnapshot(signedIn: false, events: []))
+  }
+}
+struct CalendarHomeWidget: Widget {
+  var body: some WidgetConfiguration {
+    StaticConfiguration(kind: "CalendarHomeWidget", provider: HomeProvider()) { entry in
+      HomeWidgetView(entry: entry)
+        .containerBackground(for: .widget) { Color(uiColor: .systemBackground) }
+    }
+    .configurationDisplayName("일상 캘린더")
+    .description("오늘과 다가오는 일정을 확인하세요.")
+    .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+  }
+}
+private struct HomeWidgetView: View {
+  let entry: HomeEntry
+  @Environment(\.widgetFamily) private var family
+  private var today: String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: entry.date)
+  }
+  private var events: [HomeEvent] {
+    guard entry.snapshot.signedIn else { return [] }
+    return entry.snapshot.events.filter { $0.date >= today }.sorted {
+      $0.date == $1.date ? ($0.time ?? "") < ($1.time ?? "") : $0.date < $1.date
+    }
+  }
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("일상 캘린더").font(.caption.bold()).foregroundStyle(.orange)
+      Text(entry.date, format: .dateTime.month().day().weekday()).font(.headline)
+      if !entry.snapshot.signedIn {
+        Text("앱을 열어 로그인해 주세요").font(.caption).foregroundStyle(.secondary)
+      } else if events.isEmpty {
+        Text("예정된 일정이 없어요").font(.caption).foregroundStyle(.secondary)
+      } else {
+        ForEach(Array(events.prefix(family == .systemLarge ? 6 : family == .systemSmall ? 2 : 3).enumerated()), id: \.offset) { _, event in
+          VStack(alignment: .leading, spacing: 2) {
+            Text("\(event.date == today ? "오늘" : String(event.date.suffix(5)).replacingOccurrences(of: "-", with: "/")) · \(event.time?.isEmpty == false ? event.time! : "종일")")
+              .font(.caption2).foregroundStyle(.secondary)
+            Text(event.title).font(.subheadline.weight(.medium)).lineLimit(1)
+          }
+        }
+      }
+      Spacer(minLength: 0)
+    }.frame(maxWidth: .infinity, alignment: .leading)
   }
 }

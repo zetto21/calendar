@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -16,6 +17,18 @@ import UIKit
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
       .setStreamHandler(glassAccessibility)
     engineBridge.applicationRegistrar.register(LiquidGlassFactory(), withId: "calendar_app/liquid_glass")
+    FlutterMethodChannel(name: "calendar_app/home_widget", binaryMessenger: engineBridge.applicationRegistrar.messenger())
+      .setMethodCallHandler { call, result in
+        guard call.method == "update" else { result(FlutterMethodNotImplemented); return }
+        guard let args = call.arguments as? [String: Any], let snapshot = args["snapshot"] as? String,
+              snapshot.utf8.count <= 2_000_000,
+              let defaults = UserDefaults(suiteName: "group.com.zetto.calendarAppFlutter") else {
+          result(FlutterError(code: "invalid_snapshot", message: "위젯 데이터를 확인해 주세요.", details: nil)); return
+        }
+        defaults.set(snapshot, forKey: "calendarWidgetSnapshot")
+        WidgetCenter.shared.reloadTimelines(ofKind: "CalendarHomeWidget")
+        result(nil)
+      }
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     EventKitChannel.register(with: engineBridge.applicationRegistrar.messenger())
     LiveActivityChannel.register(with: engineBridge.applicationRegistrar.messenger())
