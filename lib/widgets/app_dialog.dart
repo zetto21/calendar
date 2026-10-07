@@ -149,6 +149,10 @@ class AppDialog extends StatelessWidget {
     this.maxWidth = 440,
     this.maxHeight = 700,
     this.contentPadding = AppDialogStyle.bodyPadding,
+    this.insetPadding = const EdgeInsets.symmetric(
+      horizontal: 20,
+      vertical: 24,
+    ),
     this.showClose = true,
     this.busy = false,
     this.scrollContent = true,
@@ -159,6 +163,7 @@ class AppDialog extends StatelessWidget {
   final IconData? icon;
   final double maxWidth, maxHeight;
   final EdgeInsetsGeometry contentPadding;
+  final EdgeInsets insetPadding;
   final bool showClose, busy, scrollContent;
   final VoidCallback? onClose;
 
@@ -168,7 +173,7 @@ class AppDialog extends StatelessWidget {
     child: Dialog(
       backgroundColor: AppDialogStyle.background(context),
       surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      insetPadding: insetPadding,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppDialogStyle.radius),

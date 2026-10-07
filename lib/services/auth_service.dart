@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 
@@ -157,8 +158,19 @@ class AuthService {
   final http.Client Function()? _clientFactory;
 
   static const _sessionChannel = MethodChannel('calendar_app/session');
+  static const _mobileSessionStorage = FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
+  );
+  bool get _mobileSession =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
   bool get _persistSession =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+      _mobileSession ||
+      (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS);
+  String get _mobileSessionKey => 'calendar.session.$apiBase';
   String? _sessionToken;
   AuthUser? _sessionUser;
   int _sessionGeneration = 0;
@@ -204,7 +216,12 @@ class AuthService {
           /* Keep a memory session if browser storage is blocked. */
         }
       }
-      if (_persistSession) {
+      if (_mobileSession) {
+        await _mobileSessionStorage.write(
+          key: _mobileSessionKey,
+          value: _encodeSession(token, user),
+        );
+      } else if (_persistSession) {
         await _sessionChannel.invokeMethod<void>('write', {
           'account': apiBase,
           'value': _encodeSession(token, user),
@@ -231,7 +248,9 @@ class AuthService {
           browser_session.deleteLegacySession(_webSessionKey);
         } catch (_) {}
       }
-      if (_persistSession) {
+      if (_mobileSession) {
+        await _mobileSessionStorage.delete(key: _mobileSessionKey);
+      } else if (_persistSession) {
         await _sessionChannel.invokeMethod<void>('delete', {
           'account': apiBase,
         });
@@ -408,6 +427,8 @@ class AuthService {
         if (kIsWeb) {
           browser_session.deleteLegacySession(_webSessionKey);
           saved = browser_session.readSession(_webSessionKey);
+        } else if (_mobileSession) {
+          saved = await _mobileSessionStorage.read(key: _mobileSessionKey);
         } else {
           saved = await _sessionChannel.invokeMethod<String>('read', {
             'account': apiBase,

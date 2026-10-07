@@ -1,4 +1,5 @@
 import '../widgets/app_dialog.dart';
+import '../widgets/event_time_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -77,7 +78,7 @@ class _EventSheetState extends State<EventSheet> {
             hour: int.parse(time.split(':')[0]),
             minute: int.parse(time.split(':')[1]),
           )
-        : const TimeOfDay(hour: 9, minute: 0);
+        : TimeOfDay.now();
     _durationMinutes = draft?.duration ?? 60;
     _color = draft?.color ?? colorToHex(palette[0].value);
     _frequency = draft?.recurrence?.frequency;
@@ -145,7 +146,29 @@ class _EventSheetState extends State<EventSheet> {
     setState(() => _startTime = picked);
   }
 
+  Future<void> _pickDateTimeRange({bool selectEnd = false}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final picked = await showDialog<({DateTime start, int duration})>(
+      context: context,
+      builder: (_) => EventTimePicker(
+        start: _dateAt(_startTime),
+        durationMinutes: _durationMinutes,
+        selectEnd: selectEnd,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _date = DateTime(picked.start.year, picked.start.month, picked.start.day);
+      _startTime = TimeOfDay.fromDateTime(picked.start);
+      _durationMinutes = picked.duration;
+    });
+  }
+
   Future<void> _pickStartDateTime() async {
+    if (!_desktop && !_usesAppleDatePicker) {
+      await _pickDateTimeRange();
+      return;
+    }
     if (_usesAppleDatePicker) {
       final picked = await _showAppleDatePicker(
         mode: CupertinoDatePickerMode.dateAndTime,
@@ -165,6 +188,10 @@ class _EventSheetState extends State<EventSheet> {
   }
 
   Future<void> _pickEndTime() async {
+    if (!_desktop && !_usesAppleDatePicker) {
+      await _pickDateTimeRange(selectEnd: true);
+      return;
+    }
     if (_usesAppleDatePicker) {
       final picked = await _showAppleDatePicker(
         mode: CupertinoDatePickerMode.time,
@@ -1016,35 +1043,40 @@ class _EventSheetState extends State<EventSheet> {
     }
     final theme = widget.theme;
     const blue = Color(0xFF3B82F6);
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: LiquidGlass(
-        // This sheet presents pickers and alerts, so keep the glass effect in
-        // Flutter instead of embedding the native platform view underneath it.
-        useNative: false,
-        radius: 20,
-        child: Container(
-          decoration: BoxDecoration(
-            color: theme.surface.withValues(alpha: 0.72),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Theme(
-            data: Theme.of(context).copyWith(
-              colorScheme: Theme.of(context).colorScheme
-                  .copyWith(primary: blue, secondary: blue),
-              textSelectionTheme: const TextSelectionThemeData(
-                cursorColor: blue,
-                selectionColor: Color(0x663B82F6),
-                selectionHandleColor: blue,
+    final media = MediaQuery.of(context);
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+      child: SafeArea(
+        bottom: media.viewInsets.bottom == 0,
+        child: LiquidGlass(
+          // This sheet presents pickers and alerts, so keep the glass effect in
+          // Flutter instead of embedding the native platform view underneath it.
+          useNative: false,
+          radius: 20,
+          child: Container(
+            decoration: BoxDecoration(
+              color: theme.surface.withValues(alpha: 0.72),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
               ),
             ),
-            child: CupertinoTheme(
-              data: CupertinoTheme.of(context).copyWith(primaryColor: blue),
-              child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: Theme.of(context).colorScheme
+                    .copyWith(primary: blue, secondary: blue),
+                textSelectionTheme: const TextSelectionThemeData(
+                  cursorColor: blue,
+                  selectionColor: Color(0x663B82F6),
+                  selectionHandleColor: blue,
+                ),
+              ),
+              child: CupertinoTheme(
+                data: CupertinoTheme.of(context).copyWith(primaryColor: blue),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
@@ -1093,92 +1125,106 @@ class _EventSheetState extends State<EventSheet> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: _pickColor,
-                          child: Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: colorFromHex(_color),
-                              shape: BoxShape.circle,
+                    Flexible(
+                      child: SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 18),
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: _pickColor,
+                                  child: Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      color: colorFromHex(_color),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: CupertinoTextField.borderless(
+                                    controller: _titleController,
+                                    autofocus: !widget.isEditing,
+                                    style: TextStyle(
+                                      color: theme.text,
+                                      fontSize: 20,
+                                    ),
+                                    placeholder: '일정을 입력하세요.',
+                                    placeholderStyle: TextStyle(
+                                      color: theme.textMuted,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: CupertinoTextField.borderless(
-                            controller: _titleController,
-                            autofocus: !widget.isEditing,
-                            style: TextStyle(color: theme.text, fontSize: 20),
-                            placeholder: '일정을 입력하세요.',
-                            placeholderStyle: TextStyle(color: theme.textMuted),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 28),
-                    _iconRow(
-                      icon: Icons.access_time_rounded,
-                      label: '종일',
-                      trailing: CupertinoSwitch(
-                        value: _isAllDay,
-                        onChanged: (value) => setState(() => _isAllDay = value),
-                      ),
-                    ),
-                    _dateTimeSection(theme),
-                    _rowDivider(),
-                    _iconRow(
-                      icon: Icons.repeat,
-                      label: '반복',
-                      onTap: _pickRepeat,
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_frequency != null)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: Text(
-                                _frequencyLabel(_frequency!),
-                                style: TextStyle(color: theme.textSecondary),
+                            const Divider(height: 28),
+                            _iconRow(
+                              icon: Icons.access_time_rounded,
+                              label: '종일',
+                              trailing: CupertinoSwitch(
+                                value: _isAllDay,
+                                onChanged: (value) =>
+                                    setState(() => _isAllDay = value),
                               ),
                             ),
-                          Icon(Icons.chevron_right, color: theme.textMuted),
-                        ],
-                      ),
-                    ),
-                    _rowDivider(),
-                    _iconFieldRow(
-                      icon: Icons.location_on_outlined,
-                      controller: _locationController,
-                      hint: '장소',
-                    ),
-                    _rowDivider(),
-                    _iconFieldRow(
-                      icon: Icons.notes,
-                      controller: _descriptionController,
-                      hint: '설명',
-                      minLines: 2,
-                      maxLines: 4,
-                    ),
-                    _rowDivider(),
-                    _iconFieldRow(
-                      icon: Icons.link,
-                      controller: _urlController,
-                      hint: 'URL',
-                      keyboardType: TextInputType.url,
-                    ),
-                    const SizedBox(height: 16),
-                    CupertinoButton.filled(
-                      onPressed: _save,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      borderRadius: BorderRadius.circular(12),
-                      child: const Text(
-                        '저장',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                            _dateTimeSection(theme),
+                            _rowDivider(),
+                            _iconRow(
+                              icon: Icons.repeat,
+                              label: '반복',
+                              onTap: _pickRepeat,
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_frequency != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: Text(
+                                        _frequencyLabel(_frequency!),
+                                        style: TextStyle(
+                                          color: theme.textSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                  Icon(
+                                    Icons.chevron_right,
+                                    color: theme.textMuted,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            _rowDivider(),
+                            _iconFieldRow(
+                              icon: Icons.location_on_outlined,
+                              controller: _locationController,
+                              hint: '장소',
+                            ),
+                            _rowDivider(),
+                            _iconFieldRow(
+                              icon: Icons.notes,
+                              controller: _descriptionController,
+                              hint: '설명',
+                              minLines: 2,
+                              maxLines: 4,
+                            ),
+                            _rowDivider(),
+                            _iconFieldRow(
+                              icon: Icons.link,
+                              controller: _urlController,
+                              hint: 'URL',
+                              keyboardType: TextInputType.url,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],

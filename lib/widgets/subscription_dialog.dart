@@ -52,8 +52,10 @@ class _SubscriptionDialogState extends State<SubscriptionDialog> {
     }
   }
 
-  Widget _teamRow(KboTeam team, Color foreground) => SizedBox(
-    height: 72,
+  Widget _teamRow(KboTeam team, Color foreground) => ConstrainedBox(
+    constraints: BoxConstraints(
+      minHeight: MediaQuery.sizeOf(context).width < 600 ? 64 : 72,
+    ),
     child: Row(
       children: [
         Container(
@@ -107,6 +109,7 @@ class _SubscriptionDialogState extends State<SubscriptionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final mobile = MediaQuery.sizeOf(context).width < 600;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final foreground = dark ? const Color(0xFFE9E9ED) : const Color(0xFF242427);
     final muted = dark ? const Color(0xFF96969F) : const Color(0xFF73737D);
@@ -114,47 +117,92 @@ class _SubscriptionDialogState extends State<SubscriptionDialog> {
     return PopScope(
       canPop: _pending == null,
       child: AppDialog(
-        title: const Text('캘린더 구독하기'),
-        icon: CupertinoIcons.calendar,
+        title: Text(
+          '캘린더 구독하기',
+          style: mobile ? const TextStyle(fontSize: 18) : null,
+        ),
+        icon: mobile ? null : CupertinoIcons.calendar,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: mobile ? 12 : 20,
+          vertical: mobile ? 16 : 24,
+        ),
+        contentPadding: mobile
+            ? const EdgeInsets.fromLTRB(16, 0, 16, 16)
+            : AppDialogStyle.bodyPadding,
+        maxHeight: mobile ? MediaQuery.sizeOf(context).height : 700,
+        actions: mobile
+            ? [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _pending == null
+                        ? () => Navigator.of(context).pop()
+                        : null,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    child: const Text('완료'),
+                  ),
+                ),
+              ]
+            : const [],
         maxWidth: 880,
         busy: _pending != null,
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: foreground, width: 2)),
+            if (mobile) ...[
+              Row(
+                children: [
+                  Text('스포츠', style: TextStyle(color: muted, fontSize: 14)),
+                  const SizedBox(width: 8),
+                  Icon(Icons.chevron_right, size: 16, color: muted),
+                  const SizedBox(width: 8),
+                  Text('야구', style: TextStyle(color: foreground, fontSize: 14)),
+                ],
               ),
-              child: Text(
-                '스포츠',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(height: 16),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: foreground, width: 2),
+                  ),
+                ),
+                child: Text(
+                  '스포츠',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: foreground,
+                  ),
+                ),
+              ),
+              Divider(height: 1, color: border),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
                   color: foreground,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Text(
+                  '야구',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: dark ? const Color(0xFF202023) : Colors.white,
+                  ),
                 ),
               ),
-            ),
-            Divider(height: 1, color: border),
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: foreground,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Text(
-                '야구',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: dark ? const Color(0xFF202023) : Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Divider(height: 1, color: border),
-            const SizedBox(height: 20),
+              const SizedBox(height: 18),
+              Divider(height: 1, color: border),
+              const SizedBox(height: 20),
+            ],
             Text(
               'KBO',
               style: TextStyle(
@@ -163,7 +211,7 @@ class _SubscriptionDialogState extends State<SubscriptionDialog> {
                 color: foreground,
               ),
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: mobile ? 6 : 14),
             LayoutBuilder(
               builder: (context, constraints) {
                 if (constraints.maxWidth < 580) {

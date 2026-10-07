@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:calendar_app_flutter/services/auth_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -27,8 +28,58 @@ http.Response _login(String id, String token) =>
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.android);
+  setUp(() {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    FlutterSecureStorage.setMockInitialValues({});
+  });
   tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    test(
+      '$platform restores login after process restart and clears on logout',
+      () async {
+        debugDefaultTargetPlatformOverride = platform;
+        http.Client client() => MockClient((request) async {
+          if (request.url.path.endsWith('/login')) return _login('a', _tokenA);
+          expect(request.headers['Authorization'], 'Bearer $_tokenA');
+          if (request.url.path.endsWith('/logout')) {
+            return http.Response('', 204);
+          }
+          return _json({'user': _user('a')});
+        });
+        await AuthService.forTesting(clientFactory: client)
+            .login('a@example.com', 'Calendar1!');
+        final restarted = AuthService.forTesting(clientFactory: client);
+        expect((await restarted.restoreSession())?.id, 'a');
+        await restarted.logout();
+        expect(
+          await AuthService.forTesting(clientFactory: client).restoreSession(),
+          isNull,
+        );
+      },
+    );
+
+    test(
+      '$platform keeps saved login offline but discards expired sessions',
+      () async {
+        debugDefaultTargetPlatformOverride = platform;
+        await AuthService.forTesting(
+          clientFactory: () => MockClient((_) async => _login('a', _tokenA)),
+        ).login('a@example.com', 'Calendar1!');
+        final offline = AuthService.forTesting(
+          clientFactory: () =>
+              MockClient((_) async => throw http.ClientException('offline')),
+        );
+        expect((await offline.restoreSession())?.id, 'a');
+        final expired = AuthService.forTesting(
+          clientFactory: () =>
+              MockClient((_) async => _json({'error': 'expired'}, 401)),
+        );
+        expect(await expired.restoreSession(), isNull);
+        expect(await AuthService.forTesting().restoreSession(), isNull);
+      },
+    );
+  }
 
   test(
     'invalid token and malformed auth data cannot create a session',

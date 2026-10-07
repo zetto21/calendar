@@ -87,15 +87,26 @@ void main() {
   testWidgets('narrow popup scrolls to every team without overflow', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(390, 650);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.binding.setSurfaceSize(const Size(390, 650));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await openDialog(tester, (_, _) async {});
+    final done = find.widgetWithText(FilledButton, '완료');
+    expect(done, findsOneWidget);
+    final footerPosition = tester.getCenter(done);
     final hanwha = find.byKey(const ValueKey('subscription-HH'));
     await tester.ensureVisible(hanwha);
     await tester.pumpAndSettle();
     await tester.tap(hanwha);
     await tester.pumpAndSettle();
     expect(tester.widget<CupertinoSwitch>(hanwha).value, isTrue);
+    expect(tester.getCenter(done), footerPosition);
     expect(tester.takeException(), isNull);
+    await tester.tap(done);
+    await tester.pumpAndSettle();
+    expect(find.byType(SubscriptionDialog), findsNothing);
   });
 }

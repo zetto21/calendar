@@ -150,7 +150,6 @@ class _AuthGateState extends State<AuthGate> {
   @override
   void initState() {
     super.initState();
-    _loading = useDesktopLayout;
     unawaited(MacosWindow.showCalendar(false));
     unawaited(_restoreSession());
   }
@@ -372,10 +371,14 @@ class _CalendarHomeState extends State<CalendarHome>
   );
   DateTime _anchorDate = DateTime.now();
   DateTime? _rollingWeekStart;
+  int get _weekDayCount => useDesktopLayout ? 7 : 3;
   List<DateTime> get _visibleWeekDays => List.generate(
-    7,
+    _weekDayCount,
     (i) => date_utils.addDays(
-      _rollingWeekStart ?? date_utils.startOfWeek(_anchorDate),
+      _rollingWeekStart ??
+          (useDesktopLayout
+              ? date_utils.startOfWeek(_anchorDate)
+              : _anchorDate),
       i,
     ),
   );
@@ -1541,8 +1544,11 @@ class _CalendarHomeState extends State<CalendarHome>
         _anchorDate = date_utils.addMonths(_anchorDate, -1);
       }
       if (_view == ViewMode.week) {
-        _rollingWeekStart = date_utils.addDays(_visibleWeekDays.first, -7);
-        _anchorDate = date_utils.addDays(_anchorDate, -7);
+        _rollingWeekStart = date_utils.addDays(
+          _visibleWeekDays.first,
+          -_weekDayCount,
+        );
+        _anchorDate = date_utils.addDays(_anchorDate, -_weekDayCount);
       }
       if (_view == ViewMode.day) {
         _anchorDate = date_utils.addDays(_anchorDate, -1);
@@ -1557,8 +1563,11 @@ class _CalendarHomeState extends State<CalendarHome>
         _anchorDate = date_utils.addMonths(_anchorDate, 1);
       }
       if (_view == ViewMode.week) {
-        _rollingWeekStart = date_utils.addDays(_visibleWeekDays.first, 7);
-        _anchorDate = date_utils.addDays(_anchorDate, 7);
+        _rollingWeekStart = date_utils.addDays(
+          _visibleWeekDays.first,
+          _weekDayCount,
+        );
+        _anchorDate = date_utils.addDays(_anchorDate, _weekDayCount);
       }
       if (_view == ViewMode.day) {
         _anchorDate = date_utils.addDays(_anchorDate, 1);
@@ -1688,7 +1697,7 @@ class _CalendarHomeState extends State<CalendarHome>
           ),
         );
       case ViewMode.week:
-        if (dx != 0) _shiftVisibleDays(dx * 7);
+        if (dx != 0) _shiftVisibleDays(dx * _weekDayCount);
       case ViewMode.day:
         if (dx != 0) _shiftVisibleDays(dx);
       case ViewMode.list:
@@ -1928,7 +1937,11 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Future<void> _openCreate(DateTime date, [String? time]) async {
-    await _openSheet(draft: null, date: date, time: time);
+    final now = TimeOfDay.now();
+    final initialTime =
+        time ??
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    await _openSheet(draft: null, date: date, time: initialTime);
   }
 
   Future<void> _openEdit(CalendarEvent event) async {

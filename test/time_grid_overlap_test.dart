@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  for (final dayCount in [1, 7]) {
+  for (final dayCount in [1, 3, 7]) {
     testWidgets(
       '$dayCount days: staggered overlap keeps exact times and each card accessible',
       (tester) async {

@@ -78,7 +78,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
-  for (final dayCount in [1, 7]) {
+  for (final dayCount in [1, 3, 7]) {
     for (final kind in [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
       testWidgets(
         '$dayCount days: $kind drag scrolls without creating an event',
