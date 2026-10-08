@@ -3,8 +3,10 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
 
 #include <memory>
+#include <optional>
 
 #include "win32_window.h"
 
@@ -23,6 +25,10 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void ApplyScreen(bool calendar);
+  bool calendar_screen_ = false;
+  std::optional<RECT> calendar_frame_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
   // The project to run.
   flutter::DartProject project_;
 
