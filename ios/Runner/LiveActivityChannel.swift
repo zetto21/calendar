@@ -5,10 +5,20 @@ import UIKit
 final class LiveActivityChannel {
   private static var instance: LiveActivityChannel?
   private var busy = false
+  private var boundaryTask: Task<Void, Never>?
+  private var foregroundObserver: NSObjectProtocol?
 
   static func register(with messenger: FlutterBinaryMessenger) {
     let handler = LiveActivityChannel()
     instance = handler
+    if #available(iOS 17.0, *) {
+      handler.foregroundObserver = NotificationCenter.default.addObserver(
+        forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+      ) { [weak handler] _ in
+        Task { @MainActor in await handler?.refreshBoundaries() }
+      }
+      Task { @MainActor in await handler.refreshBoundaries() }
+    }
     FlutterMethodChannel(name: "calendar_app/live_activity", binaryMessenger: messenger)
       .setMethodCallHandler { call, result in
         guard #available(iOS 17.0, *) else {
@@ -26,6 +36,40 @@ final class LiveActivityChannel {
       }
   }
 
+  // Local tasks run only while iOS grants the app execution time. The widget's
+  // stale date handles completion independently; background start transitions
+  // require ActivityKit push updates from a server.
+  @available(iOS 17.0, *)
+  @MainActor private func refreshBoundaries() async {
+    boundaryTask?.cancel()
+    let now = Date()
+    var next: Date?
+    for activity in Activity<CalendarActivityAttributes>.activities {
+      guard activity.activityState == .active || activity.activityState == .stale else { continue }
+      var state = activity.content.state
+      let phase = state.phase(at: now)
+      if state.phase != phase {
+        state.phase = phase
+        let content = ActivityContent(state: state, staleDate: state.end)
+        if phase == "completed" {
+          await activity.end(content, dismissalPolicy: .after(state.end.addingTimeInterval(180)))
+        } else {
+          await activity.update(content)
+        }
+      }
+      let boundary = now < state.start ? state.start : now < state.end ? state.end : nil
+      if let boundary, next == nil || boundary < next! { next = boundary }
+    }
+    guard let next else { return }
+    boundaryTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: UInt64(max(0.01, next.timeIntervalSinceNow) * 1_000_000_000))
+      } catch { return }
+      guard !Task.isCancelled else { return }
+      await self?.refreshBoundaries()
+    }
+  }
+
   private var scheduledStartSupported: Bool {
     if #available(iOS 26.0, *) { return true }
     return false
@@ -33,6 +77,7 @@ final class LiveActivityChannel {
 
   @available(iOS 17.0, *)
   @MainActor private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) async {
+    await refreshBoundaries()
     let activities = Activity<CalendarActivityAttributes>.activities
     switch call.method {
     case "status":
@@ -70,8 +115,9 @@ final class LiveActivityChannel {
             scheduling ? displayStart > Date() : displayStart <= Date() else {
         result(FlutterError(code: "not_current", message: "현재 진행 중이거나 10분 안에 시작하는 시간 지정 일정만 표시할 수 있습니다.", details: nil)); return
       }
-      let state = CalendarActivityAttributes.ContentState(title: String(title.prefix(120)), color: color, start: start, end: end, displayStart: displayStart)
-      let content = ActivityContent(state: state, staleDate: end.addingTimeInterval(180))
+      var state = CalendarActivityAttributes.ContentState(title: String(title.prefix(120)), color: color, start: start, end: end, displayStart: displayStart)
+      state.phase = state.phase(at: Date())
+      let content = ActivityContent(state: state, staleDate: end)
       do {
         var activatePending = false
         if #available(iOS 26.0, *), !scheduling, let pending = activities.first(where: {
@@ -134,11 +180,12 @@ final class LiveActivityChannel {
             content,
             alertConfiguration: AlertConfiguration(
               title: "현재 일정",
-              body: "일정이 진행 중입니다.",
+              body: start > Date() ? "일정이 곧 시작됩니다." : "일정이 진행 중입니다.",
               sound: .default
             )
           )
         }
+        await refreshBoundaries()
         result(["eventID": eventID])
       } catch {
         result(FlutterError(code: "activity_failed", message: "실시간 활동을 시작하지 못했습니다. 설정과 기기 상태를 확인해 주세요.", details: nil))

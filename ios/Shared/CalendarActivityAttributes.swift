@@ -9,6 +9,11 @@ struct CalendarActivityAttributes: ActivityAttributes {
     var start: Date
     var end: Date
     var displayStart: Date? = nil
+    var phase: String? = nil
+
+    func phase(at now: Date) -> String {
+      now >= end ? "completed" : now >= start ? "ongoing" : "upcoming"
+    }
   }
   var eventID: String
 }
