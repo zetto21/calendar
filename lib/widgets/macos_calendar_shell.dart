@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../logic/date_utils.dart' as dates;
 import '../models/calendar_event.dart';
+import '../platform.dart';
 import '../theme/app_theme.dart';
 
 class MacosCalendarShell extends StatelessWidget {
@@ -177,7 +178,7 @@ class MacosCalendarShell extends StatelessWidget {
               selected: view == mode,
               child: Tooltip(
                 message:
-                    '${labels[mode]!} · ⌘${labels.keys.toList().indexOf(mode) + 1}',
+                    '${labels[mode]!} · $desktopShortcutLabel${labels.keys.toList().indexOf(mode) + 1}',
                 child: InkWell(
                   borderRadius: BorderRadius.circular(5),
                   onTap: () => onViewChanged(mode),
@@ -334,8 +335,16 @@ class MacosCalendarShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _icon('일정 추가 · ⌘N', CupertinoIcons.add, onCreate),
-                  _icon('일정 검색 · ⌘F', CupertinoIcons.search, onSearch),
+                  _icon(
+                    '일정 추가 · ${desktopShortcutLabel}N',
+                    CupertinoIcons.add,
+                    onCreate,
+                  ),
+                  _icon(
+                    '일정 검색 · ${desktopShortcutLabel}F',
+                    CupertinoIcons.search,
+                    onSearch,
+                  ),
                 ],
               ),
             ),
@@ -434,6 +443,13 @@ class MacosCalendarShell extends StatelessWidget {
   static VoidCallback? _unlessTypingOrNull(VoidCallback? action) =>
       action == null ? null : _unlessTyping(action);
 
+  static SingleActivator _primaryShortcut(LogicalKeyboardKey key) =>
+      SingleActivator(
+        key,
+        control: useControlShortcuts,
+        meta: !useControlShortcuts,
+      );
+
   Map<ShortcutActivator, VoidCallback> get _navigationBindings => {
     if (onNavigate != null) ...{
       const _CalendarNavigationActivator(LogicalKeyboardKey.arrowLeft):
@@ -452,18 +468,18 @@ class MacosCalendarShell extends StatelessWidget {
     bindings: eventEditorOpen
         ? _navigationBindings
         : {
-            const SingleActivator(LogicalKeyboardKey.digit1, meta: true): () =>
+            _primaryShortcut(LogicalKeyboardKey.digit1): () =>
                 onViewChanged(ViewMode.month),
-            const SingleActivator(LogicalKeyboardKey.digit2, meta: true): () =>
+            _primaryShortcut(LogicalKeyboardKey.digit2): () =>
                 onViewChanged(ViewMode.week),
-            const SingleActivator(LogicalKeyboardKey.digit3, meta: true): () =>
+            _primaryShortcut(LogicalKeyboardKey.digit3): () =>
                 onViewChanged(ViewMode.day),
-            const SingleActivator(LogicalKeyboardKey.digit4, meta: true): () =>
+            _primaryShortcut(LogicalKeyboardKey.digit4): () =>
                 onViewChanged(ViewMode.list),
-            const SingleActivator(LogicalKeyboardKey.keyN, meta: true):
-                onCreate,
-            const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
-                ?_unlessTypingOrNull(onPalette),
+            _primaryShortcut(LogicalKeyboardKey.keyN): onCreate,
+            _primaryShortcut(LogicalKeyboardKey.keyK): ?_unlessTypingOrNull(
+              onPalette,
+            ),
             const SingleActivator(LogicalKeyboardKey.slash):
                 ?_unlessTypingOrNull(onPalette),
             const SingleActivator(LogicalKeyboardKey.keyT): _unlessTyping(
@@ -493,8 +509,7 @@ class MacosCalendarShell extends StatelessWidget {
             ..._navigationBindings,
             const SingleActivator(LogicalKeyboardKey.enter):
                 ?_unlessTypingOrNull(onActivate),
-            const SingleActivator(LogicalKeyboardKey.keyD, meta: true):
-                ?onDuplicate,
+            _primaryShortcut(LogicalKeyboardKey.keyD): ?onDuplicate,
             if (onNudge != null) ...{
               const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true):
                   _unlessTyping(() => onNudge!(-1, 0)),
@@ -533,15 +548,13 @@ class MacosCalendarShell extends StatelessWidget {
                 () => onNudge!(0, 15),
               ),
             },
-            const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
-                onSearch,
-            const SingleActivator(LogicalKeyboardKey.keyR, meta: true):
-                ?_unlessTypingOrNull(onRefresh),
-            const SingleActivator(LogicalKeyboardKey.keyT, meta: true): onToday,
-            const SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true):
-                onPrevious,
-            const SingleActivator(LogicalKeyboardKey.arrowRight, meta: true):
-                onNext,
+            _primaryShortcut(LogicalKeyboardKey.keyF): onSearch,
+            _primaryShortcut(LogicalKeyboardKey.keyR): ?_unlessTypingOrNull(
+              onRefresh,
+            ),
+            _primaryShortcut(LogicalKeyboardKey.keyT): onToday,
+            _primaryShortcut(LogicalKeyboardKey.arrowLeft): onPrevious,
+            _primaryShortcut(LogicalKeyboardKey.arrowRight): onNext,
           },
     child: Theme(
       data: Theme.of(context).copyWith(
@@ -589,12 +602,12 @@ class MacosCalendarShell extends StatelessWidget {
                               if (!sidebar) ...[
                                 const SizedBox(width: 6),
                                 _icon(
-                                  '일정 추가 · ⌘N',
+                                  '일정 추가 · ${desktopShortcutLabel}N',
                                   CupertinoIcons.add,
                                   onCreate,
                                 ),
                                 _icon(
-                                  '일정 검색 · ⌘F',
+                                  '일정 검색 · ${desktopShortcutLabel}F',
                                   CupertinoIcons.search,
                                   onSearch,
                                 ),
@@ -627,7 +640,7 @@ class MacosCalendarShell extends StatelessWidget {
                                 ),
                               ),
                               _icon(
-                                '이전 · ⌘←',
+                                '이전 · $desktopShortcutLabel←',
                                 CupertinoIcons.chevron_left,
                                 onPrevious,
                               ),
@@ -640,7 +653,7 @@ class MacosCalendarShell extends StatelessWidget {
                                   child: const Text('오늘'),
                                 ),
                               _icon(
-                                '다음 · ⌘→',
+                                '다음 · $desktopShortcutLabel→',
                                 CupertinoIcons.chevron_right,
                                 onNext,
                               ),

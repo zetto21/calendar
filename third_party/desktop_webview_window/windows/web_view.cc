@@ -180,7 +180,7 @@ void WebView::OnWebviewControllerCreated() {
               // Let HTTP(S) navigation and its redirects continue in WebView2.
               // Cancel/restart while waiting for a Flutter callback can strand
               // the view at about:blank. Notify Dart without gating these pages;
-              // custom-scheme callbacks still use the decision handler below.
+              // custom-scheme callbacks are canceled and handed to Dart below.
               if (uri_string.rfind(L"https://", 0) == 0 ||
                   uri_string.rfind(L"http://", 0) == 0) {
                 method_channel_->InvokeMethod(
@@ -196,22 +196,10 @@ void WebView::OnWebviewControllerCreated() {
                 return S_OK;
               }
 
-              auto result_handler =
-                  std::make_unique<flutter::MethodResultFunctions<>>(
-                      [uri_string, sender,
-                       this](const flutter::EncodableValue *success_value) {
-                        bool letPass = false;
-                        if (success_value && 
-                            std::holds_alternative<bool>(*success_value)) {
-                          letPass = std::get<bool>(*success_value);
-                        }
-                        if (letPass) {
-                          this->setTriggerOnUrlRequestedEvent(false);
-                          sender->Navigate(uri_string.c_str());
-                        }
-                      },
-                      nullptr, nullptr);
-
+              // The app handles custom schemes (calendar://auth) and can close
+              // this window immediately. Never keep this/sender in an async
+              // reply handler: both may be destroyed before Dart replies.
+              args->put_Cancel(true);
               method_channel_->InvokeMethod(
                   "onUrlRequested",
                   std::make_unique<flutter::EncodableValue>(
@@ -219,14 +207,8 @@ void WebView::OnWebviewControllerCreated() {
                           {flutter::EncodableValue("id"),
                            flutter::EncodableValue(web_view_id_)},
                           {flutter::EncodableValue("url"),
-                           flutter::EncodableValue(
-                               wide_to_utf8(uri_string))},
-                      }),
-                  std::move(result_handler));
-
-              // navigation is canceled here and retriggered later from the
-              // callback passed to the method channel
-              args->put_Cancel(true);
+                           flutter::EncodableValue(wide_to_utf8(uri_string))},
+                      }));
             } else {
               args->put_Cancel(false);
               triggerOnUrlRequestedEvent = true;

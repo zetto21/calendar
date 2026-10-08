@@ -4,8 +4,11 @@ Windows cancels a navigation while awaiting the Dart `onUrlRequested` result.
 Return that result from the channel handler and send title bar notifications
 without awaiting them, so a secondary engine cannot block navigation approval.
 
-Allow Windows HTTP(S) navigation to continue while notifying Dart. Keep the
-decision handler for custom-scheme redirects, including calendar://auth.
+Allow Windows HTTP(S) navigation to continue while notifying Dart. Cancel
+custom-scheme redirects, including calendar://auth, and notify Dart without
+an asynchronous reply callback capturing the WebView's `this` or `sender`.
+Authentication closes the view during that callback, so these pointers would
+be freed before a reply arrives (Windows access violation at web_view.cc:210).
 Consequently the Windows URL callback observes HTTP(S) requests; it cannot veto
 them. Calendar authentication validates the callback before exchanging a code.
 

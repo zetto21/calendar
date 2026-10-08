@@ -116,12 +116,12 @@ class CalendarApp extends StatelessWidget {
       theme: buildMaterialTheme(lightTheme),
       darkTheme: buildMaterialTheme(darkTheme),
       builder: (context, child) {
-        if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) {
+        if (kIsWeb || !useDesktopLayout) {
           return child!;
         }
         return MediaQuery(
           data: MediaQuery.of(context)
-              .copyWith(textScaler: const TextScaler.linear(_macosTextScale)),
+              .copyWith(textScaler: const TextScaler.linear(_desktopTextScale)),
           child: child!,
         );
       },
@@ -133,8 +133,8 @@ class CalendarApp extends StatelessWidget {
   }
 }
 
-/// macOS 전체 글자 크기 배율 (1.0 = 기본). 크기를 바꾸려면 이 값만 수정.
-const double _macosTextScale = 0.9;
+/// 데스크톱 전체 글자 크기 배율 (1.0 = 기본).
+const double _desktopTextScale = 0.9;
 
 enum _AuthScreen { login, signup }
 
@@ -1859,7 +1859,13 @@ class _CalendarHomeState extends State<CalendarHome>
     }
 
     final commands = <(String, String, IconData, String?, VoidCallback)>[
-      ('새 일정', '만들기 추가', CupertinoIcons.add, '⌘N', () => _activateCreate()),
+      (
+        '새 일정',
+        '만들기 추가',
+        CupertinoIcons.add,
+        '${desktopShortcutLabel}N',
+        () => _activateCreate(),
+      ),
       ('오늘로 이동', 'today', CupertinoIcons.calendar_today, 'T', _goToday),
       ('이전', 'previous', CupertinoIcons.chevron_left, 'K', _goPrev),
       ('다음', 'next', CupertinoIcons.chevron_right, 'J', _goNext),
@@ -3082,7 +3088,7 @@ class _CalendarConnectionsSheet extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         // EventKit 채널은 iOS에만 있어 macOS에서는 기기 캘린더 연동을 숨긴다.
-        if (kIsWeb || defaultTargetPlatform != TargetPlatform.macOS) ...[
+        if (kIsWeb || !useDesktopLayout) ...[
           _connectionSection('이 기기', [
             _ConnectionInfo(
               'device',
