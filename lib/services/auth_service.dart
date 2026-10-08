@@ -134,7 +134,7 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
-enum SocialProvider { naver, kakao, google, apple, facebook }
+enum SocialProvider { naver, kakao, google, apple, facebook, microsoft }
 
 class ServerConnectionException extends AuthException {
   ServerConnectionException()

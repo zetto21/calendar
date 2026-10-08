@@ -270,9 +270,19 @@ class _LoginScreenState extends State<LoginScreen>
 
   @override
   Widget build(BuildContext context) {
-    // The web build uses the same website-style split login as macOS.
-    if (kIsWeb || defaultTargetPlatform == TargetPlatform.macOS) {
-      return _buildMacLogin();
+    // Windows and web share the macOS email and social sign-in layout.
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows) {
+      final login = _buildMacLogin();
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+        return MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(0.9)),
+          child: login,
+        );
+      }
+      return login;
     }
     final form = _emailFormVisible
         ? _buildEmailLogin(context)
@@ -496,11 +506,26 @@ class _LoginScreenState extends State<LoginScreen>
                                   runSpacing: 12,
                                   children: [
                                     for (final id in [
-                                      SocialProvider.apple,
+                                      if (!kIsWeb &&
+                                          defaultTargetPlatform ==
+                                              TargetPlatform.windows)
+                                        SocialProvider.microsoft,
+                                      if (kIsWeb ||
+                                          defaultTargetPlatform !=
+                                              TargetPlatform.windows)
+                                        SocialProvider.apple,
                                       SocialProvider.google,
+                                      if (!kIsWeb &&
+                                          defaultTargetPlatform ==
+                                              TargetPlatform.windows)
+                                        SocialProvider.apple,
                                       SocialProvider.kakao,
                                       SocialProvider.naver,
                                       SocialProvider.facebook,
+                                      if (kIsWeb ||
+                                          defaultTargetPlatform !=
+                                              TargetPlatform.windows)
+                                        SocialProvider.microsoft,
                                     ])
                                       Tooltip(
                                         message:

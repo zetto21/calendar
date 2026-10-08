@@ -66,6 +66,13 @@ final List<SocialProviderSpec> socialProviders = [
     mark: (context) => const Icon(Icons.apple, color: Colors.white, size: 28),
   ),
   SocialProviderSpec(
+    id: SocialProvider.microsoft,
+    label: 'Microsoft',
+    background: Colors.white,
+    border: const Color(0xFF747775),
+    mark: (context) => const MicrosoftMark(),
+  ),
+  SocialProviderSpec(
     id: SocialProvider.facebook,
     label: 'Facebook',
     background: const Color(0xFF0866FF),
@@ -77,3 +84,39 @@ final List<SocialProviderSpec> socialProviders = [
     ),
   ),
 ];
+
+/// Microsoft's four-color symbol, drawn sharply at desktop display scales.
+class MicrosoftMark extends StatelessWidget {
+  const MicrosoftMark({super.key});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 22,
+    height: 22,
+    child: Column(
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: ColoredBox(color: Color(0xFFF25022))),
+              SizedBox(width: 2),
+              Expanded(child: ColoredBox(color: Color(0xFF7FBA00))),
+            ],
+          ),
+        ),
+        SizedBox(height: 2),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: ColoredBox(color: Color(0xFF00A4EF))),
+              SizedBox(width: 2),
+              Expanded(child: ColoredBox(color: Color(0xFFFFB900))),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
