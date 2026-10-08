@@ -258,9 +258,9 @@ class SettingsScreen extends StatelessWidget {
           CupertinoColors.systemBlue,
           [
             _MacRow(
-              icon: CupertinoIcons.macwindow,
+              icon: CupertinoIcons.square_grid_2x2,
               color: CupertinoColors.systemBlue,
-              title: '공식 위젯 및 바탕화면 미니 창',
+              title: '공식 Windows 위젯',
               onTap: () => showWindowsWidgets(context),
             ),
           ],

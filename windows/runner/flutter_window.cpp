@@ -8,12 +8,7 @@
 #include "windows_widgets.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {
-  for (const auto& arg : project.dart_entrypoint_arguments()) {
-    if (arg == "--mini=today" || arg == "--mini=month" || arg == "--mini=upcoming")
-      mini_mode_ = arg.substr(7);
-  }
-}
+    : project_(project) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -23,14 +18,7 @@ bool FlutterWindow::OnCreate() {
   }
 
   // Consent and login share the same compact, fixed content size as macOS.
-  if (mini_mode_.empty()) ApplyScreen(false);
-  else {
-    calendar_screen_ = true;
-    const wchar_t* title = mini_mode_ == "month" ? L"일상 캘린더 · 월간 달력" :
-        mini_mode_ == "upcoming" ? L"일상 캘린더 · 다가오는 일정" : L"일상 캘린더 · 오늘 일정";
-    SetWindowText(GetHandle(), title);
-    RestoreMiniFrame(GetHandle(), mini_mode_);
-  }
+  ApplyScreen(false);
 
   RECT frame = GetClientArea();
 
@@ -43,7 +31,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
-  widget_channel_ = RegisterWindowsWidgets(flutter_controller_->engine()->messenger(), GetHandle(), !mini_mode_.empty());
+  widget_channel_ = RegisterWindowsWidgets(flutter_controller_->engine()->messenger());
   window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       flutter_controller_->engine()->messenger(), "calendar_app/window",
       &flutter::StandardMethodCodec::GetInstance());
@@ -126,15 +114,6 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  if (!mini_mode_.empty()) {
-    if (message == WM_EXITSIZEMOVE || message == WM_CLOSE) SaveMiniFrame(hwnd, mini_mode_);
-    if (message == WM_GETMINMAXINFO) {
-      auto limits = reinterpret_cast<MINMAXINFO*>(lparam);
-      const auto dpi = GetDpiForWindow(hwnd);
-      limits->ptMinTrackSize = {MulDiv(320, dpi, 96), MulDiv(360, dpi, 96)};
-      return 0;
-    }
-  }
   if (!calendar_screen_ && message == WM_SYSCOMMAND &&
       (wparam & 0xfff0) == SC_MAXIMIZE) return 0;
   if (!calendar_screen_ && message == WM_DPICHANGED) {

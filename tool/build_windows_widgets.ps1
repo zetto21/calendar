@@ -62,7 +62,23 @@ foreach ($kind in @('Today','Month','Upcoming')) {
             $graphics.DrawString("09:00  아침 회의`n`n14:00  프로젝트 점검`n`n18:00  운동", $font, $brush, 24, 125)
         }
         $graphics.DrawString('캘린더 열기        새로고침', $font, $brush, 24, 365)
-        $bitmap.Save("$package/Assets/$kind.png", [Drawing.Imaging.ImageFormat]::Png)
+        # Widget picker requires a 300x304 preview with transparent rounded corners.
+        $preview = New-Object Drawing.Bitmap(300,304)
+        $previewGraphics = [Drawing.Graphics]::FromImage($preview)
+        $outline = New-Object Drawing.Drawing2D.GraphicsPath
+        try {
+            $previewGraphics.Clear([Drawing.Color]::Transparent)
+            $previewGraphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $outline.AddArc(0,0,24,24,180,90)
+            $outline.AddArc(276,0,24,24,270,90)
+            $outline.AddArc(276,280,24,24,0,90)
+            $outline.AddArc(0,280,24,24,90,90)
+            $outline.CloseFigure()
+            $previewGraphics.SetClip($outline)
+            $previewGraphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $previewGraphics.DrawImage($bitmap,0,0,300,304)
+            $preview.Save("$package/Assets/$kind.png", [Drawing.Imaging.ImageFormat]::Png)
+        } finally { $outline.Dispose(); $previewGraphics.Dispose(); $preview.Dispose() }
     } finally { $graphics.Dispose(); $bitmap.Dispose(); $font.Dispose(); $heading.Dispose(); $brush.Dispose() }
 }
 $sdk = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin" -Directory |

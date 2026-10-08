@@ -29,7 +29,6 @@ import 'logic/recurrence.dart';
 import 'logic/security_urls.dart';
 import 'models/calendar_event.dart';
 import 'native/home_widget.dart';
-import 'screens/windows_widgets.dart';
 import 'native/eventkit.dart';
 import 'native/live_activity.dart';
 import 'native/macos_window.dart';
@@ -65,15 +64,6 @@ import 'platform.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!kIsWeb &&
-      defaultTargetPlatform == TargetPlatform.windows &&
-      args.any((arg) => arg.startsWith('--mini='))) {
-    final mode = args
-        .firstWhere((arg) => arg.startsWith('--mini='))
-        .substring(7);
-    runApp(WindowsMiniApp(mode: mode));
-    return;
-  }
   if (!kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.windows ||
           defaultTargetPlatform == TargetPlatform.linux) &&
@@ -183,8 +173,9 @@ class _AuthGateState extends State<AuthGate> {
     } finally {
       if (mounted && _authGeneration == 0) {
         await CalendarHomeWidget.clear();
-        if (!mounted || _authGeneration != 0) return;
-        setState(() => _loading = false);
+        if (mounted && _authGeneration == 0) {
+          setState(() => _loading = false);
+        }
       }
     }
   }
