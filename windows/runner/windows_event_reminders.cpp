@@ -13,6 +13,8 @@
 #include <winrt/Windows.UI.Notifications.h>
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <set>
 #include <string>
@@ -165,7 +167,9 @@ void Schedule(const flutter::EncodableValue* arguments) {
     const auto& reminder = entry.second;
     if (retained.count(entry.first) || reminder.at <= now || reminder.expires <= now) continue;
     ScheduledToastNotification notification(reminder.content, reminder.at);
-    notification.Id(reminder.id);
+    // This Windows build rejects 16 characters for Id (the null counts too).
+    // Keep the full hash in Tag, which supports all 16 characters.
+    notification.Id(std::wstring(reminder.id).substr(0, 15));
     notification.Tag(reminder.id);
     notification.Group(kGroup);
     notification.ExpirationTime(reminder.expires);
@@ -190,6 +194,16 @@ void Clear() {
 }  // namespace
 
 int RunWindowsReminderSmokeTest() {
+  auto log = [](const std::string& message) {
+    PWSTR local = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
+      const auto directory = std::filesystem::path(local) / L"IlsangCalendar" / L"widgets";
+      CoTaskMemFree(local);
+      std::filesystem::create_directories(directory);
+      std::ofstream(directory / L"reminder-smoke-test.txt") << message;
+    }
+  };
+  std::string stage = "create schedule";
   try {
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -202,6 +216,7 @@ int RunWindowsReminderSmokeTest() {
     };
     auto value = flutter::EncodableValue(flutter::EncodableList{flutter::EncodableValue(reminder)});
     Schedule(&value);
+    stage = "read schedule";
     auto notifier = ToastNotificationManager::CreateToastNotifier(app_id);
     if (notifier.GetScheduledToastNotifications().Size() != 1) return 2;
     Schedule(&value);  // Identical updates must not duplicate the reminder.
@@ -215,9 +230,11 @@ int RunWindowsReminderSmokeTest() {
     Schedule(&value);
     if (notifier.GetScheduledToastNotifications().Size() != 0) return 5;
     Clear();
+    log("WINDOWS_REMINDERS_PASS");
     return 0;
   } catch (const winrt::hresult_error& error) {
     OutputDebugStringW(error.message().c_str());
+    log(stage + ": " + std::to_string(error.code().value) + " " + winrt::to_string(error.message()));
     try { Clear(); } catch (...) {}
     return 1;
   }

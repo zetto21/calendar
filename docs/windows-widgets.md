@@ -9,14 +9,16 @@ Windows Web Experience Pack과 Microsoft Windows App Runtime 2.3.1 이상이 필
 
 ## 빌드와 설치
 
-Flutter 앱은 기존 Windows 빌드로 실행한다. 공식 위젯 공급자는 별도 C# MSIX
-패키지이며 Microsoft 로그인을 추가하지 않는다. .NET 8 SDK와 Windows SDK의
+설치 패키지는 Flutter 본 앱과 C# 공식 위젯 공급자를 함께 포함한다. 설치된 앱과
+시작 메뉴에는 `일상 캘린더`, 제작사에는 `zetto`를 표시한다. 공급자만 실행하는
+위젯 항목은 시작 메뉴에서 숨긴다. Microsoft 로그인을 추가하지 않는다. .NET 8 SDK와 Windows SDK의
 `makeappx.exe`가 필요하다. 공급자에는 .NET 런타임이 포함된다.
 
 ```powershell
-flutter build windows
+flutter build windows --release
 powershell -NoProfile -ExecutionPolicy Bypass -File tool/build_windows_widgets.ps1 -Install
 # PATH에 dotnet이 없으면 -DotNet C:/path/to/dotnet.exe 추가
+# 다른 경로에서 빌드했다면 -AppDirectory C:/path/to/runner/Release 추가
 ```
 
 스크립트는 `build/windows-widgets/IlsangCalendar.Widgets.msix`를 검증하여 만들고,
@@ -25,6 +27,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tool/build_windows_widgets.p
 `%LOCALAPPDATA%/IlsangCalendar/WindowsWidgetsPackage/<version>`이다.
 업데이트마다 버전을 올려 실행 중인 공급자의 파일 잠금을 피한다.
 다른 PC에 MSIX로 배포하려면 서명된 패키지와 위 Windows App Runtime이 필요하다.
+버전은 `pubspec.yaml`의 앱 버전에 설치 리비전을 붙여 사용한다(예: `0.1.1.5`).
+기존 위젯 연결을 보존하기 위해 내부 패키지 ID와 게시자 인증서 식별자는 유지한다.
+첫 통합 설치에서는 이전 공급자 버전 `1.0.0.x`를 앱 버전으로 맞추기 위해
+`-ForceUpdateFromAnyVersion`을 사용한다. Windows의 설치 앱 목록에서 버전 표시
+위치는 OS가 정하며, 본 앱 설정의 프로그램 정보에서는 실행 중인 실제 버전을 읽는다.
 
 ```powershell
 # 카드 생성·날짜 배치·로그아웃 확인

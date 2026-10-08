@@ -204,6 +204,17 @@ void main() {
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      WindowsEventReminders.channel,
+      (call) async {
+        calls.add(call);
+        return null;
+      },
+    );
+    await tester.runAsync(() async {
+      await WindowsEventReminders.clear();
+      calls.clear();
+    });
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -222,11 +233,17 @@ void main() {
     );
     await tester.tap(find.text('settings'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(SwitchListTile));
+    await tester.runAsync(() async {
+      await tester.tap(find.byType(SwitchListTile));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
     await tester.pumpAndSettle();
     expect(await WindowsEventReminders.enabled('a'), false);
     expect(calls.last.method, 'clear');
-    await tester.tap(find.text('알림 테스트'));
+    await tester.runAsync(() async {
+      await tester.tap(find.text('알림 테스트'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
     await tester.pumpAndSettle();
     expect(calls.last.method, 'test');
     await tester.pumpWidget(const SizedBox());
