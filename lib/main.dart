@@ -664,7 +664,7 @@ class _CalendarHomeState extends State<CalendarHome>
     if (!await AccountPreferences.instance.sync() || !mounted) return;
     await DisplaySettings.instance.load();
     await _loadPersonalCalendars();
-    await imports.load();
+    await imports.load(preserveEvents: true);
     if (!mounted) return;
     setState(() {
       _showHolidays = DisplaySettings.instance.enabled(DisplaySetting.holidays);

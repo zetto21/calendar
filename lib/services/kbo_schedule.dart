@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:http/http.dart' as http;
+
 import '../logic/date_utils.dart' as date_utils;
 import 'secure_http.dart';
 
@@ -68,7 +70,11 @@ class KboScheduleService {
   /// Fetches every KBO game (all teams) scheduled within [from, to] in a
   /// single request, so callers filtering/merging by team never end up
   /// issuing one request per team and re-fetching the same game twice.
-  static Future<List<KboGame>> fetchSchedule(DateTime from, DateTime to) async {
+  static Future<List<KboGame>> fetchSchedule(
+    DateTime from,
+    DateTime to, {
+    http.Client? client,
+  }) async {
     final uri = Uri.parse(_base).replace(
       queryParameters: {
         'fields': 'basic,schedule,baseball,manualRelayUrl',
@@ -85,13 +91,19 @@ class KboScheduleService {
       headers: {'User-Agent': 'Mozilla/5.0'},
       timeout: const Duration(seconds: 10),
       maxResponseBytes: 4 << 20,
+      client: client,
     );
-    if (response.statusCode != 200) return const [];
+    if (response.statusCode != 200) {
+      throw http.ClientException('KBO 일정 요청 실패 (${response.statusCode})', uri);
+    }
     final body = decodeBoundedJson(
       utf8.decode(response.bodyBytes),
     ) as Map<String, dynamic>;
     final result = body['result'] as Map<String, dynamic>?;
-    final games = (result?['games'] as List?) ?? const [];
+    final games = result?['games'];
+    if (games is! List) {
+      throw const FormatException('KBO 경기 일정 응답이 올바르지 않습니다.');
+    }
     if (games.length > 1000) throw const FormatException('경기 일정이 너무 많습니다.');
     return [for (final raw in games) _parseGame(raw as Map<String, dynamic>)];
   }

@@ -9,11 +9,18 @@ import '../services/auth_service.dart';
 import '../services/kbo_schedule.dart';
 
 class ImportedEvents extends ChangeNotifier {
+  ImportedEvents({
+    Future<List<KboGame>> Function(DateTime, DateTime)? fetchKboSchedule,
+  }) : _fetchKboSchedule = fetchKboSchedule ?? KboScheduleService.fetchSchedule;
+
+  final Future<List<KboGame>> Function(DateTime, DateTime) _fetchKboSchedule;
+  int _kboRefreshVersion = 0;
   static const _sourcesKey = 'calendar.import.sources.v1';
   static const _visibilityKey = 'calendar.import.visibility.v1';
   static const _excludedEventsKey = 'calendar.import.excluded-events.v1';
   EventMap _events = const {};
   int _accountGeneration = 0;
+  int? _loadedPreferencesGeneration;
   final Map<String, List<ImportCalendar>> _sources = {};
   final Map<String, bool> _visibility = {};
   final Set<String> _excludedEvents = {};
@@ -29,16 +36,30 @@ class ImportedEvents extends ChangeNotifier {
   };
   Map<String, List<ImportCalendar>> get sources => _sources;
 
-  Future<void> load() async {
+  Future<void> load({bool preserveEvents = false}) async {
     final generation = ++_accountGeneration;
     final preferencesGeneration = AccountPreferences.instance.accountGeneration;
-    _sources.clear();
-    _visibility.clear();
-    _excludedEvents.clear();
-    _events = const {};
+    final retainEvents =
+        preserveEvents && _loadedPreferencesGeneration == preferencesGeneration;
+    if (!retainEvents) {
+      _sources.clear();
+      _visibility.clear();
+      _excludedEvents.clear();
+      _events = const {};
+    }
+    final sources = <String, List<ImportCalendar>>{};
+    final visible = <String, bool>{};
+    final excludedEvents = <String>{};
     final raw = await AccountPreferences.instance.get(_sourcesKey) as String?;
     if (!_isCurrent(generation, preferencesGeneration)) return;
-    if (raw == null) return;
+    if (raw == null) {
+      _sources.clear();
+      _visibility.clear();
+      _excludedEvents.clear();
+      _events = const {};
+      _loadedPreferencesGeneration = preferencesGeneration;
+      return;
+    }
     try {
       final saved = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       var migratedDeviceSources = false;
@@ -55,9 +76,9 @@ class ImportedEvents extends ChangeNotifier {
               ),
             )
             .toList();
-        final existing = _sources[key];
+        final existing = sources[key];
         if (existing == null) {
-          _sources[key] = calendars;
+          sources[key] = calendars;
         } else {
           final seenIds = existing.map((calendar) => calendar.id).toSet();
           existing.addAll(
@@ -68,7 +89,7 @@ class ImportedEvents extends ChangeNotifier {
       final visibility = await AccountPreferences.instance.get(_visibilityKey);
       if (!_isCurrent(generation, preferencesGeneration)) return;
       if (visibility != null) {
-        _visibility.addAll(
+        visible.addAll(
           Map<String, dynamic>.from(jsonDecode(visibility as String) as Map)
               .map(
                 (key, value) =>
@@ -81,11 +102,35 @@ class ImportedEvents extends ChangeNotifier {
       );
       if (!_isCurrent(generation, preferencesGeneration)) return;
       if (excluded != null) {
-        _excludedEvents.addAll(
+        excludedEvents.addAll(
           (jsonDecode(excluded as String) as List).map(
             (value) => value as String,
           ),
         );
+      }
+      // Commit settings together, keeping connected calendars visible while
+      // resume synchronization fetches their latest events in the background.
+      _sources
+        ..clear()
+        ..addAll(sources);
+      _visibility
+        ..clear()
+        ..addAll(visible);
+      _excludedEvents
+        ..clear()
+        ..addAll(excludedEvents);
+      _loadedPreferencesGeneration = preferencesGeneration;
+      if (retainEvents) {
+        final connected = {
+          for (final source in sources.entries)
+            for (final calendar in source.value) '${source.key}|${calendar.id}',
+        };
+        _events = {
+          for (final entry in _events.entries)
+            entry.key: entry.value
+                .where((event) => connected.contains(event.systemCalendarId))
+                .toList(),
+        }..removeWhere((_, events) => events.isEmpty);
       }
       if (migratedDeviceSources) {
         await _persistSources();
@@ -100,6 +145,7 @@ class ImportedEvents extends ChangeNotifier {
         _sources.clear();
         _visibility.clear();
         _excludedEvents.clear();
+        _events = const {};
       }
     }
   }
@@ -200,6 +246,7 @@ class ImportedEvents extends ChangeNotifier {
     final preferencesGeneration = AccountPreferences.instance.accountGeneration;
     final calendars = _sources[provider];
     if (calendars == null) return;
+    if (provider == 'kbo') _kboRefreshVersion++;
     final remaining = calendars.where((item) => item.id != calendarId).toList();
     if (remaining.isEmpty) {
       _sources.remove(provider);
@@ -330,8 +377,14 @@ class ImportedEvents extends ChangeNotifier {
     DateTime from,
     DateTime to,
   ) async {
-    final games = await KboScheduleService.fetchSchedule(from, to);
-    if (!_isCurrent(generation, preferencesGeneration)) return;
+    final version = ++_kboRefreshVersion;
+    bool current() =>
+        version == _kboRefreshVersion &&
+        _isCurrent(generation, preferencesGeneration);
+    final games = await _fetchKboSchedule(from, to);
+    // Date navigation and subscription changes can overlap network requests.
+    // Only the newest response may replace the currently displayed schedule.
+    if (!current()) return;
     final colorByCode = {for (final c in calendars) c.id: c.color};
     final next = <String, List<CalendarEvent>>{};
     for (final game in games) {
@@ -364,12 +417,41 @@ class ImportedEvents extends ChangeNotifier {
       );
       (next[event.date] ??= []).add(event);
     }
-    if (!_isCurrent(generation, preferencesGeneration)) return;
+    if (!current()) return;
+    final previousCalendars = _sources['kbo'] ?? const <ImportCalendar>[];
+    final sourcesChanged =
+        previousCalendars.length != calendars.length ||
+        !listEquals(
+          previousCalendars.map(_calendarSignature).toList(),
+          calendars.map(_calendarSignature).toList(),
+        );
+    final previousEvents = {
+      for (final event in _events.values.expand((items) => items))
+        if (event.id.startsWith('import:kbo:'))
+          event.id: jsonEncode(event.toJson()),
+    };
+    final nextEvents = {
+      for (final event in next.values.expand((items) => items))
+        event.id: jsonEncode(event.toJson()),
+    };
+    final eventsChanged = !mapEquals(previousEvents, nextEvents);
     _sources['kbo'] = calendars;
-    await _persistSources();
-    if (!_isCurrent(generation, preferencesGeneration)) return;
-    replaceProvider('kbo', next);
+    if (sourcesChanged) await _persistSources();
+    if (!current()) return;
+    if (eventsChanged) {
+      replaceProvider('kbo', next);
+    } else if (sourcesChanged) {
+      notifyListeners();
+    }
   }
+
+  static String _calendarSignature(ImportCalendar calendar) => jsonEncode([
+    calendar.id,
+    calendar.title,
+    calendar.color,
+    calendar.category,
+    calendar.nameUnavailable,
+  ]);
 }
 
 const _kakaoYellow = '#F5D76E';
