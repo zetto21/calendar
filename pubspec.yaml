@@ -51,6 +51,11 @@ dependencies:
   crypto: ^3.0.6
   web: ^1.1.1
   flutter_secure_storage: ^11.2.0
+dependency_overrides:
+  # Fixes Windows navigation callbacks that return null in the 0.3.0 release.
+  desktop_webview_window:
+    path: third_party/desktop_webview_window
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
