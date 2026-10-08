@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <Company>zetto</Company>
+    <Authors>zetto</Authors>
+    <Product>일상 캘린더</Product>
+    <Copyright>Copyright (C) 2026 zetto</Copyright>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <Nullable>enable</Nullable>

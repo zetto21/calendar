@@ -30,6 +30,7 @@ class FlutterWindow : public Win32Window {
   std::optional<RECT> calendar_frame_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> widget_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> reminders_channel_;
   // The project to run.
   flutter::DartProject project_;
 

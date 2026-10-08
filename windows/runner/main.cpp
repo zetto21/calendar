@@ -4,6 +4,7 @@
 
 #include "flutter_window.h"
 #include "utils.h"
+#include "windows_event_reminders.h"
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
@@ -21,6 +22,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
+
+  if (command_line_arguments.size() == 1 &&
+      command_line_arguments[0] == "--reminders-smoke-test") {
+    const int result = RunWindowsReminderSmokeTest();
+    ::CoUninitialize();
+    return result;
+  }
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 

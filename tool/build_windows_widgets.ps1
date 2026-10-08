@@ -2,6 +2,7 @@
     [string]$DotNet = 'dotnet',
     [switch]$Install,
     [string]$Version,
+    [string]$AppDirectory,
     [string]$InstallDirectory = "$env:LOCALAPPDATA/IlsangCalendar/WindowsWidgetsPackage"
 )
 $ErrorActionPreference = 'Stop'
@@ -9,15 +10,23 @@ $repo = Split-Path $PSScriptRoot -Parent
 $output = Join-Path $repo 'build/windows-widgets'
 $package = Join-Path $output 'package'
 New-Item -ItemType Directory -Force -Path "$package/Provider", "$package/Assets", "$package/Public" | Out-Null
-& $DotNet publish "$repo/windows/widgets/IlsangWidgets.csproj" -c Release -o "$package/Provider"
+$versionLine = Get-Content -LiteralPath "$repo/pubspec.yaml" | Where-Object { $_ -match '^version:\s*' } | Select-Object -First 1
+if ($versionLine -notmatch '^version:\s*(\d+\.\d+\.\d+)(?:\+(\d+))?\s*$') { throw 'pubspec.yaml app version is invalid.' }
+$appVersion = $Matches[1]
+$buildNumber = if ($Matches[2]) { [int]$Matches[2] } else { 0 }
+if (!$AppDirectory) { $AppDirectory = "$repo/build/windows/x64/runner/Release" }
+if (!(Test-Path -LiteralPath "$AppDirectory/calendar_app_flutter.exe")) { throw 'Build the Flutter Windows release first or pass -AppDirectory.' }
+New-Item -ItemType Directory -Force -Path "$package/App" | Out-Null
+Copy-Item -Path "$AppDirectory/*" -Destination "$package/App" -Recurse -Force
+& $DotNet publish "$repo/windows/widgets/IlsangWidgets.csproj" -c Release -o "$package/Provider" "-p:Version=$appVersion"
 if ($LASTEXITCODE -ne 0) { throw 'Widget provider build failed.' }
 Copy-Item -LiteralPath "$repo/windows/widgets/Package.appxmanifest" -Destination "$package/AppxManifest.xml" -Force
 if (!$Version) {
     $installed = Get-AppxPackage IlsangCalendar.Widgets | Select-Object -First 1
     if ($installed -and $Install) {
         $previous = [Version]$installed.Version
-        $Version = "1.0.0.$($previous.Revision + 1)"
-    } else { $Version = '1.0.0.0' }
+        $Version = "$appVersion.$([Math]::Max($buildNumber, $previous.Revision + 1))"
+    } else { $Version = "$appVersion.$buildNumber" }
 }
 [xml]$manifest = Get-Content "$package/AppxManifest.xml" -Raw -Encoding utf8
 $manifest.Package.Identity.Version = $Version
@@ -92,7 +101,7 @@ if ($Install) {
     $destination = Join-Path $InstallDirectory $Version
     New-Item -ItemType Directory -Force -Path $destination | Out-Null
     Copy-Item -Path "$package/*" -Destination $destination -Recurse -Force
-    Add-AppxPackage -Register "$destination/AppxManifest.xml" -ForceApplicationShutdown
+    Add-AppxPackage -Register "$destination/AppxManifest.xml" -ForceApplicationShutdown -ForceUpdateFromAnyVersion
     Write-Output "Installed: $destination"
 }
 Write-Output "MSIX: $output/IlsangCalendar.Widgets.msix"

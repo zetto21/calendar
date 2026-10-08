@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 
@@ -21,6 +22,7 @@ class SettingsScreen extends StatelessWidget {
   final VoidCallback onLogout;
   final VoidCallback? onLiveActivities;
   final VoidCallback? onCalendarConnections;
+  final VoidCallback? onEventReminders;
   final Future<List<String>> Function(ValueChanged<double> onProgress)?
   onBackup;
   final Future<void> Function()? onRestore;
@@ -32,14 +34,27 @@ class SettingsScreen extends StatelessWidget {
     required this.onLogout,
     this.onLiveActivities,
     this.onCalendarConnections,
+    this.onEventReminders,
     this.onBackup,
     this.onRestore,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (_isMac) return _buildMac(context);
-    if (_isAndroid) return _buildAndroid(context);
+    if (_isMac) {
+      return FutureBuilder<PackageInfo>(
+        future: PackageInfo.fromPlatform(),
+        builder: (context, snapshot) =>
+            _buildMac(context, version: snapshot.data?.version ?? '확인 중'),
+      );
+    }
+    if (_isAndroid) {
+      return FutureBuilder<PackageInfo>(
+        future: PackageInfo.fromPlatform(),
+        builder: (context, snapshot) =>
+            _buildAndroid(context, version: snapshot.data?.version ?? '확인 중'),
+      );
+    }
     return CupertinoTheme(
       data: CupertinoThemeData(
         brightness: theme.isDark ? Brightness.dark : Brightness.light,
@@ -203,7 +218,7 @@ class SettingsScreen extends StatelessWidget {
                       CupertinoColors.systemRed,
                     ),
                     title: Text('캘린더'),
-                    additionalInfo: const Text('0.1.0 베타'),
+                    additionalInfo: const _AppVersionText(),
                   ),
                 ],
               ),
@@ -242,7 +257,7 @@ class SettingsScreen extends StatelessWidget {
   bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
   bool get _isMac => useDesktopLayout;
 
-  Widget _buildMac(BuildContext context) {
+  Widget _buildMac(BuildContext context, {required String version}) {
     _MacRow info(String title, String message, IconData icon, Color color) =>
         _MacRow(
           icon: icon,
@@ -251,6 +266,15 @@ class SettingsScreen extends StatelessWidget {
           onTap: () => _showInfo(context, title, message),
         );
     final sections = [
+      if (onEventReminders != null)
+        _MacSection('알림', CupertinoIcons.bell, CupertinoColors.systemOrange, [
+          _MacRow(
+            icon: CupertinoIcons.bell,
+            color: CupertinoColors.systemOrange,
+            title: '일정 시작 알림',
+            onTap: onEventReminders,
+          ),
+        ]),
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
         _MacSection(
           'Windows 위젯',
@@ -376,8 +400,20 @@ class SettingsScreen extends StatelessWidget {
           _MacRow(
             icon: CupertinoIcons.calendar,
             color: CupertinoColors.systemRed,
-            title: '캘린더',
-            value: '0.1.0 베타',
+            title: '일상 캘린더',
+            value: version,
+          ),
+          const _MacRow(
+            icon: CupertinoIcons.person,
+            color: CupertinoColors.systemGrey,
+            title: '개발자',
+            value: 'zetto',
+          ),
+          const _MacRow(
+            icon: CupertinoIcons.building_2_fill,
+            color: CupertinoColors.systemGrey,
+            title: '제작사',
+            value: 'zetto',
           ),
         ],
       ),
@@ -385,7 +421,7 @@ class SettingsScreen extends StatelessWidget {
     return _MacSettings(theme: theme, sections: sections);
   }
 
-  Widget _buildAndroid(BuildContext context) {
+  Widget _buildAndroid(BuildContext context, {required String version}) {
     final materialTheme = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
@@ -517,7 +553,7 @@ class SettingsScreen extends StatelessWidget {
                     tile(
                       Icons.calendar_month_outlined,
                       '캘린더',
-                      subtitle: '0.1.0 베타',
+                      subtitle: version,
                     ),
                   ]),
                   section('안내', [
@@ -691,6 +727,16 @@ class SettingsScreen extends StatelessWidget {
       borderRadius: BorderRadius.circular(7),
     ),
     child: Icon(icon, color: CupertinoColors.white, size: 17),
+  );
+}
+
+class _AppVersionText extends StatelessWidget {
+  const _AppVersionText();
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PackageInfo>(
+    future: PackageInfo.fromPlatform(),
+    builder: (context, snapshot) => Text(snapshot.data?.version ?? '확인 중'),
   );
 }
 

@@ -6,6 +6,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "windows_widgets.h"
+#include "windows_event_reminders.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -32,6 +33,7 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   widget_channel_ = RegisterWindowsWidgets(flutter_controller_->engine()->messenger());
+  reminders_channel_ = RegisterWindowsEventReminders(flutter_controller_->engine()->messenger());
   window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       flutter_controller_->engine()->messenger(), "calendar_app/window",
       &flutter::StandardMethodCodec::GetInstance());
@@ -67,6 +69,7 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   widget_channel_.reset();
+  reminders_channel_.reset();
   window_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;

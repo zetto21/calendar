@@ -1,5 +1,7 @@
 import 'widgets/app_dialog.dart';
 import 'services/desktop_notifications.dart';
+import 'services/windows_event_reminders.dart';
+import 'screens/windows_reminder_settings.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -86,6 +88,7 @@ Future<void> main(List<String> args) async {
   await AccountPreferences.instance.selectAccount(null);
   await store.load();
   await importedEvents.load();
+  await WindowsEventReminders.clear();
   await DisplaySettings.instance.load();
   runApp(
     MultiProvider(
@@ -184,6 +187,7 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _acceptUser(AuthUser? user) async {
     final generation = ++_authGeneration;
     await CalendarHomeWidget.clear();
+    await WindowsEventReminders.clear();
     if (!mounted || generation != _authGeneration) return;
     setState(() => _loading = true);
     final imports = context.read<ImportedEvents>();
@@ -204,6 +208,7 @@ class _AuthGateState extends State<AuthGate> {
     if (!mounted || generation != _authGeneration) return;
     // Account-store notifications can enqueue updates while the old view exits.
     await CalendarHomeWidget.clear();
+    await WindowsEventReminders.clear();
     if (!mounted || generation != _authGeneration) return;
     setState(() {
       _user = user;
@@ -951,6 +956,7 @@ class _CalendarHomeState extends State<CalendarHome>
 
   void _refreshHomeWidget() {
     if (!mounted) return;
+    unawaited(_refreshEventReminders());
     final today = DateTime.now();
     final events = expandEvents(
       _combineEvents(
@@ -962,6 +968,18 @@ class _CalendarHomeState extends State<CalendarHome>
       widget.deviceZone,
     );
     unawaited(CalendarHomeWidget.update(events, signedIn: widget.user != null));
+  }
+
+  Future<void> _refreshEventReminders() async {
+    if (!mounted) return;
+    await WindowsEventReminders.update(
+      account: widget.user?.id ?? 'guest',
+      events: _combineEvents(
+        _showPersonalCalendar ? _eventStore.events : const {},
+        _widgetImports.events,
+      ),
+      zone: widget.deviceZone,
+    );
   }
 
   Future<void> _refreshLiveActivity() async {
@@ -2259,6 +2277,13 @@ class _CalendarHomeState extends State<CalendarHome>
           : lightTheme,
       accountLabel: widget.user?.email ?? '게스트',
       onCalendarConnections: _showCalendarConnections,
+      onEventReminders: WindowsEventReminders.supported
+          ? () => showWindowsReminderSettings(
+              context,
+              account: widget.user?.id ?? 'guest',
+              onChanged: _refreshEventReminders,
+            )
+          : null,
       onLogout: widget.onLogout,
       onBackup: _backupData,
       onRestore: _restoreData,

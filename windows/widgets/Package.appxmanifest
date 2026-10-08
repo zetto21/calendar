@@ -6,15 +6,18 @@
  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
  IgnorableNamespaces="uap uap3 com rescap">
  <Identity Name="IlsangCalendar.Widgets" Publisher="CN=IlsangCalendar" Version="1.0.0.0" ProcessorArchitecture="x64" />
- <Properties><DisplayName>일상 캘린더 위젯</DisplayName><PublisherDisplayName>일상 캘린더</PublisherDisplayName><Logo>Assets\StoreLogo.png</Logo></Properties>
+ <Properties><DisplayName>일상 캘린더</DisplayName><PublisherDisplayName>zetto</PublisherDisplayName><Logo>Assets\StoreLogo.png</Logo></Properties>
  <Dependencies>
   <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26100.0" />
   <PackageDependency Name="Microsoft.WindowsAppRuntime.2" MinVersion="2.3.1.0" Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
  </Dependencies>
  <Resources><Resource Language="ko-kr" /><Resource Language="en-us" /></Resources>
  <Applications>
+  <Application Id="Calendar" Executable="App\calendar_app_flutter.exe" EntryPoint="Windows.FullTrustApplication">
+   <uap:VisualElements DisplayName="일상 캘린더" Description="일정 관리, 구독 캘린더, Windows 알림과 위젯" BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" />
+  </Application>
   <Application Id="Widgets" Executable="Provider\IlsangWidgets.exe" EntryPoint="Windows.FullTrustApplication">
-   <uap:VisualElements DisplayName="일상 캘린더 위젯" Description="오늘 일정, 월간 달력, 다가오는 일정" BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" />
+   <uap:VisualElements DisplayName="일상 캘린더 위젯" Description="오늘 일정, 월간 달력, 다가오는 일정" AppListEntry="none" BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" />
    <Extensions>
     <com:Extension Category="windows.comServer"><com:ComServer>
      <com:ExeServer Executable="Provider\IlsangWidgets.exe" Arguments="-Embedding" DisplayName="일상 캘린더 위젯">
