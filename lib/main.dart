@@ -9,6 +9,7 @@ import 'widgets/personal_calendars.dart';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/cupertino.dart';
@@ -61,8 +62,14 @@ import 'widgets/server_connection_monitor.dart';
 import 'widgets/consent_gate.dart';
 import 'platform.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux) &&
+      runWebViewTitleBarWidget(args)) {
+    return;
+  }
   assert(() {
     // Baseline guides are a Flutter Inspector aid, never application UI.
     debugPaintBaselinesEnabled = false;

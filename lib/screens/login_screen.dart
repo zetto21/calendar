@@ -506,10 +506,6 @@ class _LoginScreenState extends State<LoginScreen>
                                   runSpacing: 12,
                                   children: [
                                     for (final id in [
-                                      if (!kIsWeb &&
-                                          defaultTargetPlatform ==
-                                              TargetPlatform.windows)
-                                        SocialProvider.microsoft,
                                       if (kIsWeb ||
                                           defaultTargetPlatform !=
                                               TargetPlatform.windows)
@@ -522,10 +518,6 @@ class _LoginScreenState extends State<LoginScreen>
                                       SocialProvider.kakao,
                                       SocialProvider.naver,
                                       SocialProvider.facebook,
-                                      if (kIsWeb ||
-                                          defaultTargetPlatform !=
-                                              TargetPlatform.windows)
-                                        SocialProvider.microsoft,
                                     ])
                                       Tooltip(
                                         message:
