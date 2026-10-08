@@ -55,6 +55,7 @@ import 'screens/settings_screen.dart';
 import 'widgets/top_bar.dart';
 import 'widgets/command_palette.dart';
 import 'widgets/macos_calendar_shell.dart';
+import 'widgets/calendar_view_transition.dart';
 import 'widgets/imported_calendar_group.dart';
 import 'widgets/subscription_dialog.dart';
 import 'widgets/liquid_glass.dart';
@@ -2584,6 +2585,9 @@ class _CalendarHomeState extends State<CalendarHome>
   }
 
   Widget _animateView(Widget child) {
+    if (useWindowsCalendarMotion) {
+      return CalendarViewTransition(viewKey: _view, child: child);
+    }
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return ClipRect(
       child: TweenAnimationBuilder<double>(
@@ -2605,28 +2609,34 @@ class _CalendarHomeState extends State<CalendarHome>
     );
   }
 
-  Widget _buildDesktopView(AppTheme theme, EventMap expanded) => LayoutBuilder(
-    builder: (context, constraints) {
-      final editor = _eventSidePanel;
-      if (editor == null ||
-          (_view == ViewMode.month && constraints.maxWidth >= 760)) {
-        return _buildView(theme, expanded);
-      }
-      if (constraints.maxWidth < 600) return editor;
-      return Row(
-        children: [
-          Expanded(child: _buildView(theme, expanded)),
-          Container(
-            width: constraints.maxWidth >= 1000 ? 280 : 230,
-            decoration: BoxDecoration(
-              border: Border(left: BorderSide(color: theme.border)),
+  Widget _buildDesktopView(AppTheme theme, EventMap expanded) {
+    // Freeze each view's contents before layout: an outgoing transition must
+    // not rebuild itself using the newly selected mode.
+    final calendar = _buildView(theme, expanded);
+    final editor = _eventSidePanel;
+    final view = _view;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (editor == null ||
+            (view == ViewMode.month && constraints.maxWidth >= 760)) {
+          return calendar;
+        }
+        if (constraints.maxWidth < 600) return editor;
+        return Row(
+          children: [
+            Expanded(child: calendar),
+            Container(
+              width: constraints.maxWidth >= 1000 ? 280 : 230,
+              decoration: BoxDecoration(
+                border: Border(left: BorderSide(color: theme.border)),
+              ),
+              child: editor,
             ),
-            child: editor,
-          ),
-        ],
-      );
-    },
-  );
+          ],
+        );
+      },
+    );
+  }
 
   Widget _buildView(AppTheme theme, EventMap expanded) {
     switch (_view) {
@@ -2650,6 +2660,10 @@ class _CalendarHomeState extends State<CalendarHome>
           onCollapseReady: (collapse) => _collapseAgenda = collapse,
           onEventMove: _moveEvent,
           onEventHover: _onEventHover,
+          onCreateDate: (date) {
+            _selectDay(date);
+            _openSheet(draft: null, date: date);
+          },
           onSelectDate: (key) {
             setState(() {
               _selectedKey = key;

@@ -11,6 +11,7 @@ import 'month_view.dart';
 import '../widgets/liquid_glass.dart';
 import 'time_grid_view.dart';
 import '../platform.dart';
+import '../widgets/calendar_view_transition.dart';
 
 /// Calendar and selected-day agenda share the available screen height.
 class MonthAgenda extends StatefulWidget {
@@ -25,6 +26,7 @@ class MonthAgenda extends StatefulWidget {
   final Map<String, List<String>> anniversaryNames;
   final bool showLunar;
   final ValueChanged<String> onSelectDate;
+  final ValueChanged<DateTime>? onCreateDate;
   final VoidCallback? onPreviousMonth;
   final VoidCallback? onNextMonth;
   final ValueChanged<CalendarEvent> onEventPress;
@@ -45,6 +47,7 @@ class MonthAgenda extends StatefulWidget {
     this.anniversaryNames = const {},
     this.showLunar = false,
     required this.onSelectDate,
+    this.onCreateDate,
     this.onPreviousMonth,
     this.onNextMonth,
     required this.onEventPress,
@@ -125,21 +128,33 @@ class _MonthAgendaState extends State<MonthAgenda> {
         child: AnimatedSwitcher(
           duration: MediaQuery.disableAnimationsOf(context)
               ? Duration.zero
-              : const Duration(milliseconds: 300),
-          switchInCurve: Curves.easeInOutCubic,
-          switchOutCurve: Curves.easeInOutCubic,
+              : Duration(milliseconds: useWindowsCalendarMotion ? 200 : 300),
+          switchInCurve: useWindowsCalendarMotion
+              ? Curves.easeOutCubic
+              : Curves.easeInOutCubic,
+          switchOutCurve: useWindowsCalendarMotion
+              ? Curves.easeInCubic
+              : Curves.easeInOutCubic,
           layoutBuilder: (current, previous) => Stack(
             children: [
               for (final outgoing in previous)
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: ExcludeSemantics(child: outgoing),
+                    child: ExcludeFocus(
+                      child: ExcludeSemantics(child: outgoing),
+                    ),
                   ),
                 ),
               ?current,
             ],
           ),
           transitionBuilder: (child, animation) {
+            if (useWindowsCalendarMotion) {
+              return calendarFadeTransition(
+                RepaintBoundary(child: child),
+                animation,
+              );
+            }
             final incoming = child.key == ValueKey(_monthIndex);
             return SlideTransition(
               position: Tween<Offset>(
@@ -227,6 +242,7 @@ class _MonthAgendaState extends State<MonthAgenda> {
                         (constraints.maxHeight - 28) / rows,
                       ),
                       onSelectDate: widget.onSelectDate,
+                      onCreateDate: widget.onCreateDate,
                       onEventMove: widget.onEventMove,
                       onEventHover: widget.onEventHover,
                     ),
@@ -413,6 +429,7 @@ class _MonthAgendaState extends State<MonthAgenda> {
                       anniversaryNames: widget.anniversaryNames,
                       showLunar: widget.showLunar,
                       compact: _open,
+                      onCreateDate: widget.onCreateDate,
                       rowHeight: math.max(
                         90,
                         (constraints.maxHeight - 28) / rows,

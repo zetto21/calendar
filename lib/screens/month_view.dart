@@ -19,6 +19,7 @@ class MonthView extends StatelessWidget {
   final Map<String, List<String>> anniversaryNames;
   final bool showLunar;
   final ValueChanged<String> onSelectDate;
+  final ValueChanged<DateTime>? onCreateDate;
   final bool compact;
   final double rowHeight;
   final void Function(CalendarEvent event, DateTime date)? onEventMove;
@@ -36,6 +37,7 @@ class MonthView extends StatelessWidget {
     this.anniversaryNames = const {},
     this.showLunar = false,
     required this.onSelectDate,
+    this.onCreateDate,
     this.compact = false,
     this.rowHeight = 108,
     this.onEventMove,
@@ -93,6 +95,7 @@ class MonthView extends StatelessWidget {
                 anniversaryNames: anniversaryNames,
                 showLunar: showLunar,
                 onSelectDate: onSelectDate,
+                onCreateDate: onCreateDate,
                 compact: compact,
                 onEventMove: onEventMove,
                 onEventHover: onEventHover,
@@ -116,6 +119,7 @@ class _MonthCell extends StatelessWidget {
   final Map<String, List<String>> anniversaryNames;
   final bool showLunar;
   final ValueChanged<String> onSelectDate;
+  final ValueChanged<DateTime>? onCreateDate;
   final bool compact;
   final void Function(CalendarEvent event, DateTime date)? onEventMove;
   final ValueChanged<CalendarEvent?>? onEventHover;
@@ -132,13 +136,19 @@ class _MonthCell extends StatelessWidget {
     required this.anniversaryNames,
     required this.showLunar,
     required this.onSelectDate,
+    this.onCreateDate,
     required this.compact,
     this.onEventMove,
     this.onEventHover,
   });
 
   Widget _draggableChip(CalendarEvent event, double height, Widget chip) {
-    if (onEventMove == null || !isMovableEvent(event)) return chip;
+    if (onEventMove == null || !isMovableEvent(event)) {
+      return GestureDetector(
+        onDoubleTap: () => onSelectDate(event.date),
+        child: chip,
+      );
+    }
     return MouseRegion(
       onEnter: (_) => onEventHover?.call(event),
       onExit: (_) => onEventHover?.call(null),
@@ -149,6 +159,7 @@ class _MonthCell extends StatelessWidget {
           onEventHover?.call(event);
           onSelectDate(event.date);
         },
+        onDoubleTap: () => onSelectDate(event.date),
         child: Draggable<CalendarEvent>(
           data: event,
           dragAnchorStrategy: pointerDragAnchorStrategy,
@@ -227,6 +238,9 @@ class _MonthCell extends StatelessWidget {
         onAcceptWithDetails: (details) => onEventMove!(details.data, cell.date),
         builder: (context, candidates, _) => InkWell(
           onTap: () => onSelectDate(key),
+          onDoubleTap: onCreateDate == null
+              ? null
+              : () => onCreateDate!(cell.date),
           child: Container(
             decoration: BoxDecoration(
               color: candidates.isNotEmpty
@@ -383,6 +397,9 @@ class _MonthCell extends StatelessWidget {
     }
     return InkWell(
       onTap: () => onSelectDate(key),
+      onDoubleTap: desktop && onCreateDate != null
+          ? () => onCreateDate!(cell.date)
+          : null,
       child: Container(
         decoration: BoxDecoration(
           color: !compact && isSelected ? theme.bgSecondary : theme.bg,

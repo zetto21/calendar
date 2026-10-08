@@ -3,8 +3,6 @@
 #include <shlobj.h>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
-#include <algorithm>
 
 std::wstring WidgetDirectory() {
   PWSTR folder = nullptr;

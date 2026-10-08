@@ -7,7 +7,9 @@ import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import '../logic/date_utils.dart' as date_utils;
 import '../logic/time_event_layout.dart';
 import '../models/calendar_event.dart';
+import '../platform.dart';
 import '../theme/app_theme.dart';
+import '../widgets/calendar_view_transition.dart';
 
 const double _hourHeight = 56;
 const double _labelWidth = 42;
@@ -148,7 +150,9 @@ class _TimeGridViewState extends State<TimeGridView>
     _transition =
         AnimationController(
           vsync: this,
-          duration: const Duration(milliseconds: 280),
+          duration: Duration(
+            milliseconds: useWindowsCalendarMotion ? 200 : 280,
+          ),
           value: 1,
         )..addStatusListener((status) {
           if (status == AnimationStatus.completed && mounted) {
@@ -298,61 +302,105 @@ class _TimeGridViewState extends State<TimeGridView>
               }
             : null,
         child: LayoutBuilder(
-          builder: (context, constraints) => ClipRect(
-            child: AnimatedBuilder(
-              animation: _transition,
-              builder: (context, _) {
-                final width = constraints.maxWidth;
-                _columnWidth = (width - _labelWidth) / widget.days.length;
-                final progress = Curves.easeOutCubic.transform(
-                  _transition.value,
-                );
-                final incoming = _outgoing != null
-                    ? (_direction * width + _transitionDrag) * (1 - progress)
-                    : _transitionDrag * (1 - progress);
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (_outgoing != null)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: ExcludeSemantics(
-                            child: Transform.translate(
-                              offset: Offset(
-                                _transitionDrag * (1 - progress) -
-                                    _direction * width * progress,
-                                0,
-                              ),
-                              child: _buildGrid(
-                                context,
-                                width,
-                                view: _outgoing!,
-                                controller: _outgoingScroll!,
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            _columnWidth = (width - _labelWidth) / widget.days.length;
+            // Reuse the expensive calendar grid across animation ticks. Direct
+            // continuous panning still rebuilds its column offset when needed.
+            final animatingColumns =
+                widget.onShiftDays != null &&
+                _outgoing == null &&
+                _transitionDrag != 0;
+            final currentGrid = animatingColumns
+                ? null
+                : RepaintBoundary(
+                    child: _buildGrid(
+                      context,
+                      width,
+                      view: widget,
+                      controller: _scrollController,
+                    ),
+                  );
+            final outgoingGrid = _outgoing == null
+                ? null
+                : RepaintBoundary(
+                    child: _buildGrid(
+                      context,
+                      width,
+                      view: _outgoing!,
+                      controller: _outgoingScroll!,
+                    ),
+                  );
+            return ClipRect(
+              child: AnimatedBuilder(
+                animation: _transition,
+                child: currentGrid,
+                builder: (context, currentGrid) {
+                  final progress = Curves.easeOutCubic.transform(
+                    _transition.value,
+                  );
+                  // Button/keyboard navigation needs only a short movement.
+                  // Keep direct manipulation proportional to the user's drag.
+                  final travel =
+                      useWindowsCalendarMotion && _transitionDrag == 0
+                      ? width.clamp(0.0, 24.0)
+                      : width;
+                  final incoming = _outgoing != null
+                      ? (_direction * travel + _transitionDrag) * (1 - progress)
+                      : _transitionDrag * (1 - progress);
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (_outgoing != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: ExcludeSemantics(
+                              child: ExcludeFocus(
+                                child: Opacity(
+                                  opacity: useWindowsCalendarMotion
+                                      ? 1 - progress
+                                      : 1,
+                                  child: Transform.translate(
+                                    offset: Offset(
+                                      _transitionDrag * (1 - progress) -
+                                          _direction * travel * progress,
+                                      0,
+                                    ),
+                                    child: outgoingGrid,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                      Transform.translate(
+                        key: const ValueKey('time-grid-current-page'),
+                        offset: Offset(
+                          widget.onShiftDays != null && _outgoing == null
+                              ? 0
+                              : incoming + _dragOffset,
+                          0,
+                        ),
+                        child: Opacity(
+                          opacity: useWindowsCalendarMotion && _outgoing != null
+                              ? progress
+                              : 1,
+                          child:
+                              currentGrid ??
+                              _buildGrid(
+                                context,
+                                width,
+                                view: widget,
+                                controller: _scrollController,
+                              ),
+                        ),
                       ),
-                    Transform.translate(
-                      key: const ValueKey('time-grid-current-page'),
-                      offset: Offset(
-                        widget.onShiftDays != null && _outgoing == null
-                            ? 0
-                            : incoming + _dragOffset,
-                        0,
-                      ),
-                      child: _buildGrid(
-                        context,
-                        width,
-                        view: widget,
-                        controller: _scrollController,
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
         ),
       ),
     );
@@ -715,6 +763,15 @@ class _DayColumnState extends State<_DayColumn> {
   int _minuteAt(double y) =>
       (((y / _hourHeight * 60) / 15).round() * 15).clamp(0, 24 * 60);
 
+  void _beginCreate(double y) => setState(() {
+    _createFrom = _minuteAt(y);
+    _createTo = _createFrom;
+  });
+
+  void _updateCreate(double y) => setState(() => _createTo = _minuteAt(y));
+
+  void _cancelCreate() => setState(() => _createFrom = _createTo = null);
+
   void _finishCreate() {
     final from = _createFrom, to = _createTo;
     setState(() => _createFrom = _createTo = null);
@@ -786,46 +843,65 @@ class _DayColumnState extends State<_DayColumn> {
         width: widget.width,
         child: Stack(
           children: [
-            GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onLongPressStart: widget.onRangeCreate == null
-                  ? null
-                  : (d) => setState(() {
-                      _createFrom = _minuteAt(d.localPosition.dy);
-                      _createTo = _createFrom;
-                    }),
-              onLongPressMoveUpdate: widget.onRangeCreate == null
-                  ? null
-                  : (d) => setState(
-                      () => _createTo = _minuteAt(d.localPosition.dy),
-                    ),
-              onLongPressEnd: widget.onRangeCreate == null
-                  ? null
-                  : (_) => _finishCreate(),
-              onLongPressCancel: widget.onRangeCreate == null
-                  ? null
-                  : () => setState(() => _createFrom = _createTo = null),
-              child: Column(
-                children: [
-                  for (final h in date_utils.hoursOfDay)
-                    InkWell(
-                      onTap: () => widget.onSlotPress(day, h),
-                      child: Container(
-                        height: _hourHeight,
-                        decoration: BoxDecoration(
-                          color: widget.selectedHour == h
-                              ? theme.accent.withValues(alpha: 0.12)
-                              : (candidates.isNotEmpty
-                                    ? theme.accent.withValues(alpha: 0.04)
-                                    : null),
-                          border: Border(
-                            top: BorderSide(color: theme.border, width: 0.5),
-                            left: BorderSide(color: theme.border, width: 0.5),
+            RawGestureDetector(
+              // A desktop mouse drag selects a time range immediately. Keep
+              // touch scrolling and trackpad scrolling with the scroll view.
+              gestures: {
+                if (useDesktopLayout && widget.onRangeCreate != null)
+                  VerticalDragGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                        VerticalDragGestureRecognizer
+                      >(
+                        () => VerticalDragGestureRecognizer(
+                          supportedDevices: {PointerDeviceKind.mouse},
+                        ),
+                        (recognizer) {
+                          recognizer.dragStartBehavior = DragStartBehavior.down;
+                          recognizer.onStart = (d) =>
+                              _beginCreate(d.localPosition.dy);
+                          recognizer.onUpdate = (d) =>
+                              _updateCreate(d.localPosition.dy);
+                          recognizer.onEnd = (_) => _finishCreate();
+                          recognizer.onCancel = _cancelCreate;
+                        },
+                      ),
+              },
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onLongPressStart: widget.onRangeCreate == null
+                    ? null
+                    : (d) => _beginCreate(d.localPosition.dy),
+                onLongPressMoveUpdate: widget.onRangeCreate == null
+                    ? null
+                    : (d) => _updateCreate(d.localPosition.dy),
+                onLongPressEnd: widget.onRangeCreate == null
+                    ? null
+                    : (_) => _finishCreate(),
+                onLongPressCancel: widget.onRangeCreate == null
+                    ? null
+                    : _cancelCreate,
+                child: Column(
+                  children: [
+                    for (final h in date_utils.hoursOfDay)
+                      InkWell(
+                        onTap: () => widget.onSlotPress(day, h),
+                        child: Container(
+                          height: _hourHeight,
+                          decoration: BoxDecoration(
+                            color: widget.selectedHour == h
+                                ? theme.accent.withValues(alpha: 0.12)
+                                : (candidates.isNotEmpty
+                                      ? theme.accent.withValues(alpha: 0.04)
+                                      : null),
+                            border: Border(
+                              top: BorderSide(color: theme.border, width: 0.5),
+                              left: BorderSide(color: theme.border, width: 0.5),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
             if (_createFrom != null && _createTo != null)

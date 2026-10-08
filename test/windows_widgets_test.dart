@@ -3,9 +3,7 @@ import 'dart:convert';
 import 'package:calendar_app_flutter/models/calendar_event.dart';
 import 'package:calendar_app_flutter/native/home_widget.dart';
 import 'package:flutter/services.dart';
-import 'package:calendar_app_flutter/screens/windows_widgets.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
