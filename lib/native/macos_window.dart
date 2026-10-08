@@ -8,7 +8,9 @@ class MacosWindow {
   static Future<void> showCalendar(bool calendar) async {
     if (kIsWeb ||
         (defaultTargetPlatform != TargetPlatform.macOS &&
-            defaultTargetPlatform != TargetPlatform.windows)) return;
+            defaultTargetPlatform != TargetPlatform.windows)) {
+      return;
+    }
     try {
       await channel.invokeMethod<void>(
         'setScreen',
