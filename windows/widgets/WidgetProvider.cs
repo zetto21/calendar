@@ -52,7 +52,6 @@ public sealed class WidgetProvider : IWidgetProvider
     public void OnActionInvoked(WidgetActionInvokedArgs args)
     {
         if (args.Verb == "open") Program.OpenCalendar();
-        if (args.Verb == "refresh") Update(Remember(args.WidgetContext, true));
     }
     private void RefreshChanged()
     {
@@ -61,25 +60,31 @@ public sealed class WidgetProvider : IWidgetProvider
             var write = File.GetLastWriteTimeUtc(WidgetCards.SnapshotPath);
             var day = DateTime.Today;
             if (write == lastWrite && day == lastDay) return;
-            lastWrite = write; lastDay = day;
             // Account changes and logout also erase cached cards while inactive.
-            lock (gate) foreach (var widget in widgets.Values) Update(widget);
+            // Retry on the next 3-second tick if the Windows host rejects an update.
+            lock (gate)
+            {
+                var updated = true;
+                foreach (var widget in widgets.Values) updated &= Update(widget);
+                if (updated) { lastWrite = write; lastDay = day; }
+            }
         }
         catch (Exception error) { Program.Log(error); }
     }
-    private void Update(Widget widget)
+    private bool Update(Widget widget)
     {
         try
         {
             lock (gate)
             {
-                if (!widgets.ContainsKey(widget.Id)) return;
+                if (!widgets.ContainsKey(widget.Id)) return true;
                 WidgetManager.GetDefault().UpdateWidget(new WidgetUpdateRequestOptions(widget.Id) {
                     Template = WidgetCards.Build(widget.Definition, widget.Size, WidgetCards.ReadSnapshot(), DateTime.Today),
                     Data = "{}", CustomState = ""
                 });
+                return true;
             }
         }
-        catch (Exception error) { Program.Log(error); }
+        catch (Exception error) { Program.Log(error); return false; }
     }
 }

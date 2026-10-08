@@ -61,7 +61,7 @@ foreach ($kind in @('Today','Month','Upcoming')) {
             $graphics.DrawString('10월 9일 금요일', $font, $brush, 24, 76)
             $graphics.DrawString("09:00  아침 회의`n`n14:00  프로젝트 점검`n`n18:00  운동", $font, $brush, 24, 125)
         }
-        $graphics.DrawString('캘린더 열기        새로고침', $font, $brush, 24, 365)
+        $graphics.DrawString('캘린더 열기', $font, $brush, 24, 365)
         # Widget picker requires a 300x304 preview with transparent rounded corners.
         $preview = New-Object Drawing.Bitmap(300,304)
         $previewGraphics = [Drawing.Graphics]::FromImage($preview)

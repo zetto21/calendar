@@ -73,6 +73,9 @@ internal static class Program
         {
             var card = JsonNode.Parse(WidgetCards.Build(mode, size, snapshot, now))!;
             if (card["type"]!.GetValue<string>() != "AdaptiveCard") throw new Exception("Invalid card");
+            var actions = card["actions"]!.AsArray();
+            if (actions.Count != 1 || actions[0]?["verb"]?.GetValue<string>() != "open")
+                throw new Exception("Widget must only show the open-calendar action");
             if (mode == "upcoming" && size != "Small" && !card.ToJsonString().Contains("\\uB0B4\\uC77C"))
                 throw new Exception("Upcoming event missing");
             if (mode == "month" && card["body"]!.AsArray().Count(n => n?["type"]?.GetValue<string>() == "ColumnSet") != 5)

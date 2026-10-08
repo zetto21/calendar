@@ -92,7 +92,6 @@ internal static class WidgetCards
         ["$schema"] = "http://adaptivecards.io/schemas/adaptive-card.json", ["type"] = "AdaptiveCard",
         ["version"] = "1.5", ["body"] = body,
         ["actions"] = new JsonArray(
-            new JsonObject { ["type"] = "Action.Execute", ["title"] = "캘린더 열기", ["verb"] = "open" },
-            new JsonObject { ["type"] = "Action.Execute", ["title"] = "새로고침", ["verb"] = "refresh" })
+            new JsonObject { ["type"] = "Action.Execute", ["title"] = "캘린더 열기", ["verb"] = "open" })
     }.ToJsonString();
 }
