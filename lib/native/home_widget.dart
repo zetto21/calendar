@@ -15,7 +15,8 @@ abstract final class CalendarHomeWidget {
   static Future<void> update(EventMap events, {required bool signedIn}) {
     if (kIsWeb ||
         (defaultTargetPlatform != TargetPlatform.iOS &&
-            defaultTargetPlatform != TargetPlatform.android)) {
+            defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.windows)) {
       return Future.value();
     }
     final now = DateTime.now();

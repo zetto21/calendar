@@ -11,6 +11,9 @@ import '../services/backup_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/liquid_glass.dart';
 import '../platform.dart';
+import '../screens/windows_widgets.dart';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class SettingsScreen extends StatelessWidget {
   final AppTheme theme;
@@ -248,6 +251,20 @@ class SettingsScreen extends StatelessWidget {
           onTap: () => _showInfo(context, title, message),
         );
     final sections = [
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+        _MacSection(
+          'Windows 위젯',
+          CupertinoIcons.square_grid_2x2,
+          CupertinoColors.systemBlue,
+          [
+            _MacRow(
+              icon: CupertinoIcons.macwindow,
+              color: CupertinoColors.systemBlue,
+              title: '공식 위젯 및 바탕화면 미니 창',
+              onTap: () => showWindowsWidgets(context),
+            ),
+          ],
+        ),
       _MacSection(
         '계정',
         CupertinoIcons.person_fill,
