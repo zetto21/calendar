@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../logic/security_urls.dart';
@@ -211,7 +212,13 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (error) {
       if (!mounted) return;
       _showLoginFailure(
-        error is AuthException ? error.message : '간편 로그인에 실패했습니다.',
+        error is AuthException
+            ? error.message
+            : error is PlatformException
+            ? (error.code.toLowerCase() == 'canceled'
+                  ? '로그인이 취소되었습니다.'
+                  : error.message ?? '간편 로그인에 실패했습니다.')
+            : '간편 로그인에 실패했습니다.',
       );
     } finally {
       if (mounted) setState(() => _socialBusy = null);
