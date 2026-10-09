@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import WidgetKit
+import CoreText
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -17,6 +18,9 @@ import WidgetKit
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
       .setStreamHandler(glassAccessibility)
     engineBridge.applicationRegistrar.register(LiquidGlassFactory(), withId: "calendar_app/liquid_glass")
+    engineBridge.applicationRegistrar.register(
+      NativeGlassButtonsFactory(messenger: engineBridge.applicationRegistrar.messenger()),
+      withId: "calendar_app/native_glass_buttons")
     FlutterMethodChannel(name: "calendar_app/home_widget", binaryMessenger: engineBridge.applicationRegistrar.messenger())
       .setMethodCallHandler { call, result in
         guard call.method == "update" else { result(FlutterMethodNotImplemented); return }
@@ -192,7 +196,9 @@ final class LiquidGlassPlatformView: NSObject, FlutterPlatformView {
     } else {
       effectView.backgroundColor = .clear
       if #available(iOS 26.0, *) {
-        effectView.effect = UIGlassEffect(style: .regular)
+        let glassEffect = UIGlassEffect(style: .regular)
+        glassEffect.isInteractive = true
+        effectView.effect = glassEffect
       } else {
         effectView.effect = UIBlurEffect(style: .systemMaterial)
       }
@@ -201,4 +207,148 @@ final class LiquidGlassPlatformView: NSObject, FlutterPlatformView {
 
   deinit { NotificationCenter.default.removeObserver(self) }
   func view() -> UIView { effectView }
+}
+
+final class NativeGlassButtonsFactory: NSObject, FlutterPlatformViewFactory {
+  private let messenger: FlutterBinaryMessenger
+  init(messenger: FlutterBinaryMessenger) { self.messenger = messenger }
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
+    FlutterStandardMessageCodec.sharedInstance()
+  }
+  func create(withFrame frame: CGRect, viewIdentifier id: Int64, arguments: Any?) -> FlutterPlatformView {
+    NativeGlassButtonsView(frame: frame, id: id, messenger: messenger,
+      arguments: arguments as? [String: Any] ?? [:])
+  }
+}
+
+/// UIKit owns the entire hit-test path, including the system's held-touch effect.
+final class NativeGlassButtonsView: NSObject, FlutterPlatformView {
+  private let channel: FlutterMethodChannel
+  private let control: UIView
+  private static var fonts: [String: CGFont] = [:]
+
+  init(frame: CGRect, id: Int64, messenger: FlutterBinaryMessenger, arguments: [String: Any]) {
+    channel = FlutterMethodChannel(name: "calendar_app/native_glass_buttons/\(id)", binaryMessenger: messenger)
+    let actions = arguments["actions"] as? [[String: Any]] ?? []
+    if actions.count > 1 {
+      let effect: UIVisualEffect
+      if #available(iOS 26.0, *) {
+        let glass = UIGlassEffect(style: .regular)
+        glass.isInteractive = true
+        effect = glass
+      } else {
+        effect = UIBlurEffect(style: .systemMaterial)
+      }
+      control = NativeGlassCapsule(effect: effect)
+      control.frame = frame
+    } else {
+      let button = UIButton(type: .system)
+      button.frame = frame
+      control = button
+    }
+    super.init()
+    control.clipsToBounds = false
+    control.isUserInteractionEnabled = true
+    control.showsLargeContentViewer = false
+    if let button = control as? UIButton {
+      button.addTarget(self, action: #selector(buttonPressed), for: .touchUpInside)
+    }
+    configure(arguments)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "configure", let args = call.arguments as? [String: Any] else {
+        result(FlutterMethodNotImplemented); return
+      }
+      self?.configure(args)
+      result(nil)
+    }
+  }
+
+  private func configure(_ args: [String: Any]) {
+    let actions = args["actions"] as? [[String: Any]] ?? []
+    let iconSize = CGFloat((args["iconSize"] as? NSNumber)?.doubleValue ?? 20)
+    let value = (args["color"] as? NSNumber)?.uint32Value ?? 0xFF000000
+    let color = UIColor(red: CGFloat((value >> 16) & 255) / 255,
+      green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255,
+      alpha: CGFloat((value >> 24) & 255) / 255)
+    control.tintColor = color
+    control.overrideUserInterfaceStyle = args["dark"] as? Bool == true ? .dark : .light
+    if let button = control as? UIButton, let action = actions.first {
+      var config: UIButton.Configuration
+      if #available(iOS 26.0, *) { config = .glass() } else { config = .plain() }
+      config.cornerStyle = .capsule
+      config.contentInsets = .zero
+      config.baseForegroundColor = color
+      config.image = Self.icon(action, size: iconSize)
+      button.configuration = config
+      button.accessibilityLabel = action["label"] as? String
+    } else if let capsule = control as? NativeGlassCapsule {
+      if capsule.buttons.count != actions.count {
+        capsule.buttons.forEach { $0.removeFromSuperview() }
+        capsule.buttons = actions.indices.map { index in
+          let button = UIButton(type: .system)
+          button.tag = index
+          button.addTarget(self, action: #selector(capsulePressed(_:)), for: .touchUpInside)
+          capsule.contentView.addSubview(button)
+          return button
+        }
+      }
+      for (button, action) in zip(capsule.buttons, actions) {
+        var config = UIButton.Configuration.plain()
+        config.contentInsets = .zero
+        config.baseForegroundColor = color
+        config.image = Self.icon(action, size: iconSize)
+        button.configuration = config
+        button.accessibilityLabel = action["label"] as? String
+        button.showsLargeContentViewer = false
+      }
+      capsule.setNeedsLayout()
+    }
+  }
+
+  // Draw the existing Flutter icon glyphs, retaining their shape and weight.
+  private static func icon(_ action: [String: Any], size: CGFloat) -> UIImage? {
+    let name = action["font"] as? String ?? "material"
+    if fonts[name] == nil {
+      let relative = name == "cupertino" ? "packages/cupertino_icons/assets/CupertinoIcons.ttf" : "fonts/MaterialIcons-Regular.otf"
+      let url = Bundle.main.bundleURL.appendingPathComponent("Frameworks/App.framework/flutter_assets/\(relative)")
+      if let provider = CGDataProvider(url: url as CFURL), let font = CGFont(provider) {
+        CTFontManagerRegisterGraphicsFont(font, nil)
+        fonts[name] = font
+      }
+    }
+    guard let font = fonts[name], let postscript = font.postScriptName,
+          let uiFont = UIFont(name: postscript as String, size: size),
+          let code = action["codePoint"] as? NSNumber,
+          let scalar = UnicodeScalar(code.uint32Value) else {
+      return UIImage(systemName: action["symbol"] as? String ?? "circle")
+    }
+    let text = String(scalar) as NSString
+    let attributes: [NSAttributedString.Key: Any] = [.font: uiFont, .foregroundColor: UIColor.white]
+    let textSize = text.size(withAttributes: attributes)
+    return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
+      text.draw(at: CGPoint(x: (size - textSize.width) / 2, y: (size - textSize.height) / 2), withAttributes: attributes)
+    }.withRenderingMode(.alwaysTemplate)
+  }
+
+  @objc private func buttonPressed() { channel.invokeMethod("press", arguments: 0) }
+  @objc private func capsulePressed(_ button: UIButton) { channel.invokeMethod("press", arguments: button.tag) }
+  deinit { channel.setMethodCallHandler(nil) }
+  func view() -> UIView { control }
+}
+
+/// One continuous glass capsule with two independent tap targets.
+final class NativeGlassCapsule: UIVisualEffectView {
+  var buttons: [UIButton] = []
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    layer.cornerRadius = bounds.height / 2
+    layer.cornerCurve = .continuous
+    clipsToBounds = true
+    guard !buttons.isEmpty else { return }
+    let width = bounds.width / CGFloat(buttons.count)
+    for (index, button) in buttons.enumerated() {
+      button.frame = CGRect(x: CGFloat(index) * width, y: 0, width: width, height: bounds.height)
+    }
+  }
 }

@@ -1,4 +1,5 @@
 import 'app_dialog.dart';
+import 'liquid_glass.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -72,14 +73,18 @@ class MacosCalendarShell extends StatelessWidget {
   };
 
   Widget _icon(String tooltip, IconData icon, VoidCallback action) =>
-      IconButton(
-        tooltip: tooltip,
-        onPressed: action,
-        style: IconButton.styleFrom(
-          minimumSize: const Size(32, 32),
-          padding: const EdgeInsets.all(6),
+      LiquidGlass(
+        useNative: false,
+        radius: 16,
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: action,
+          style: IconButton.styleFrom(
+            minimumSize: const Size(32, 32),
+            padding: const EdgeInsets.all(6),
+          ),
+          icon: Icon(icon, size: 18, color: theme.text),
         ),
-        icon: Icon(icon, size: 18, color: theme.text),
       );
 
   Widget _sectionTitle(String title) => Padding(
@@ -162,12 +167,9 @@ class MacosCalendarShell extends StatelessWidget {
     );
   }
 
-  Widget _views() => Container(
-    decoration: BoxDecoration(
-      color: theme.bgSecondary,
-      border: Border.all(color: theme.border),
-      borderRadius: BorderRadius.circular(8),
-    ),
+  Widget _views() => LiquidGlass(
+    useNative: false,
+    radius: 18,
     child: Padding(
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -180,7 +182,7 @@ class MacosCalendarShell extends StatelessWidget {
                 message:
                     '${labels[mode]!} · $desktopShortcutLabel${labels.keys.toList().indexOf(mode) + 1}',
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(5),
+                  borderRadius: BorderRadius.circular(14),
                   onTap: () => onViewChanged(mode),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
@@ -189,7 +191,7 @@ class MacosCalendarShell extends StatelessWidget {
                     height: 28,
                     decoration: BoxDecoration(
                       color: view == mode ? theme.text : Colors.transparent,
-                      borderRadius: BorderRadius.circular(5),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(
                       labels[mode]!,
@@ -311,12 +313,10 @@ class MacosCalendarShell extends StatelessWidget {
     return Container(
       key: const ValueKey('macos-calendar-sidebar'),
       width: 248,
-      decoration: BoxDecoration(
-        color: theme.bgSecondary,
-        border: Border(right: BorderSide(color: theme.border)),
-      ),
-      child: Material(
-        color: theme.bgSecondary,
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      child: LiquidGlass(
+        useNative: false,
+        radius: 24,
         child: Column(
           children: [
             Padding(
@@ -340,6 +340,7 @@ class MacosCalendarShell extends StatelessWidget {
                     CupertinoIcons.add,
                     onCreate,
                   ),
+                  const SizedBox(width: 8),
                   _icon(
                     '일정 검색 · ${desktopShortcutLabel}F',
                     CupertinoIcons.search,
@@ -578,48 +579,50 @@ class MacosCalendarShell extends StatelessWidget {
                   Expanded(
                     child: Column(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.bgSecondary,
-                            border: Border(
-                              bottom: BorderSide(color: theme.border),
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: LiquidGlass(
+                            useNative: false,
+                            radius: 24,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              child: Row(
+                                children: [
+                                  if (!sidebar)
+                                    _icon(
+                                      '캘린더 표시',
+                                      CupertinoIcons.sidebar_left,
+                                      () => _showCalendars(context),
+                                    ),
+                                  const Spacer(),
+                                  _views(),
+                                  if (!sidebar) ...[
+                                    const SizedBox(width: 6),
+                                    _icon(
+                                      '일정 추가 · ${desktopShortcutLabel}N',
+                                      CupertinoIcons.add,
+                                      onCreate,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _icon(
+                                      '일정 검색 · ${desktopShortcutLabel}F',
+                                      CupertinoIcons.search,
+                                      onSearch,
+                                    ),
+                                  ],
+                                  const Spacer(),
+                                  if (!sidebar)
+                                    _icon(
+                                      '설정',
+                                      CupertinoIcons.gear,
+                                      onSettings ?? onManage,
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              if (!sidebar)
-                                _icon(
-                                  '캘린더 표시',
-                                  CupertinoIcons.sidebar_left,
-                                  () => _showCalendars(context),
-                                ),
-                              const Spacer(),
-                              _views(),
-                              if (!sidebar) ...[
-                                const SizedBox(width: 6),
-                                _icon(
-                                  '일정 추가 · ${desktopShortcutLabel}N',
-                                  CupertinoIcons.add,
-                                  onCreate,
-                                ),
-                                _icon(
-                                  '일정 검색 · ${desktopShortcutLabel}F',
-                                  CupertinoIcons.search,
-                                  onSearch,
-                                ),
-                              ],
-                              const Spacer(),
-                              if (!sidebar)
-                                _icon(
-                                  '설정',
-                                  CupertinoIcons.gear,
-                                  onSettings ?? onManage,
-                                ),
-                            ],
                           ),
                         ),
                         Padding(

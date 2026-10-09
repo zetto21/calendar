@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/cupertino.dart';
 
 import '../theme/app_theme.dart';
 import '../models/calendar_event.dart';
 import 'liquid_glass.dart';
+import 'native_glass_buttons.dart';
 
 class TopBar extends StatefulWidget {
   static void _ignoreView(ViewMode _) {}
@@ -82,27 +83,48 @@ class _TopBarState extends State<TopBar> {
                   ),
                 ),
               ),
-              _controlSurface(
-                radius: 22,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _actionButton(
-                      tooltip: '일정 검색',
+              if (_isIos)
+                NativeGlassButtons(
+                  color: theme.text,
+                  dark: theme.isDark,
+                  actions: [
+                    NativeGlassAction(
                       icon: Icons.search,
+                      label: '일정 검색',
+                      symbol: 'magnifyingglass',
                       onPressed: widget.onSearch,
-                      color: theme.text,
                     ),
-                    _actionButton(
-                      tooltip: '보기 방식: ${_viewLabel(widget.view)}',
+                    NativeGlassAction(
                       icon: _viewIcon(widget.view),
+                      label: '보기 방식: ${_viewLabel(widget.view)}',
+                      symbol: 'calendar',
                       onPressed: () =>
                           widget.onViewChanged(_nextView(widget.view)),
-                      color: theme.text,
                     ),
                   ],
+                )
+              else
+                _controlSurface(
+                  radius: 22,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _actionButton(
+                        tooltip: '일정 검색',
+                        icon: Icons.search,
+                        onPressed: widget.onSearch,
+                        color: theme.text,
+                      ),
+                      _actionButton(
+                        tooltip: '보기 방식: ${_viewLabel(widget.view)}',
+                        icon: _viewIcon(widget.view),
+                        onPressed: () =>
+                            widget.onViewChanged(_nextView(widget.view)),
+                        color: theme.text,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
           if (widget.view == ViewMode.day || widget.view == ViewMode.week)
@@ -229,17 +251,24 @@ class _TopBarState extends State<TopBar> {
   }
 
   bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
+  bool get _isIos => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   Widget _controlSurface({required double radius, required Widget child}) {
     if (_isAndroid) return child;
     // Keep Flutter controls below the drawer, including on iOS.
-    return LiquidGlass(useNative: false, radius: radius, child: child);
+    final surface = LiquidGlass(useNative: false, radius: radius, child: child);
+    return surface;
   }
 
   ButtonStyle? get _iconButtonStyle => _isAndroid
       ? IconButton.styleFrom(
           backgroundColor: Colors.transparent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        )
+      : !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
+      ? IconButton.styleFrom(
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: Colors.transparent,
         )
       : null;
 
@@ -249,16 +278,34 @@ class _TopBarState extends State<TopBar> {
     required VoidCallback onPressed,
     required Color color,
   }) {
+    if (_isIos) {
+      return NativeGlassButtons(
+        color: color,
+        dark: widget.theme.isDark,
+        itemWidth: 40,
+        height: 40,
+        actions: [
+          NativeGlassAction(
+            icon: icon,
+            label: tooltip,
+            symbol: 'line.3.horizontal',
+            onPressed: onPressed,
+          ),
+        ],
+      );
+    }
     return _controlSurface(
       radius: 20,
       child: SizedBox(
         width: _isAndroid ? 48 : 40,
         height: _isAndroid ? 48 : 40,
-        child: IconButton(
-          style: _iconButtonStyle,
-          tooltip: tooltip,
-          onPressed: onPressed,
-          icon: Icon(icon, size: 20, color: color),
+        child: Semantics(
+          label: tooltip,
+          child: IconButton(
+            style: _iconButtonStyle,
+            onPressed: onPressed,
+            icon: Icon(icon, size: 20, color: color),
+          ),
         ),
       ),
     );
@@ -273,11 +320,13 @@ class _TopBarState extends State<TopBar> {
     return SizedBox(
       width: _isAndroid ? 48 : 44,
       height: _isAndroid ? 48 : 44,
-      child: IconButton(
-        style: _iconButtonStyle,
-        tooltip: tooltip,
-        onPressed: onPressed,
-        icon: Icon(icon, size: 20, color: color),
+      child: Semantics(
+        label: tooltip,
+        child: IconButton(
+          style: _iconButtonStyle,
+          onPressed: onPressed,
+          icon: Icon(icon, size: 20, color: color),
+        ),
       ),
     );
   }

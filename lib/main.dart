@@ -61,6 +61,7 @@ import 'widgets/calendar_view_transition.dart';
 import 'widgets/imported_calendar_group.dart';
 import 'widgets/subscription_dialog.dart';
 import 'widgets/liquid_glass.dart';
+import 'widgets/native_glass_buttons.dart';
 import 'widgets/server_connection_monitor.dart';
 import 'widgets/consent_gate.dart';
 import 'platform.dart';
@@ -2540,9 +2541,7 @@ class _CalendarHomeState extends State<CalendarHome>
                     },
                     onMenu: () {
                       _collapseAgenda();
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _scaffoldKey.currentState?.openDrawer();
-                      });
+                      _scaffoldKey.currentState?.openDrawer();
                     },
                     onSearch: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -2577,28 +2576,64 @@ class _CalendarHomeState extends State<CalendarHome>
                                 bottom:
                                     MediaQuery.viewPaddingOf(context).bottom +
                                     24,
-                                child: SizedBox(
-                                  width: 48,
-                                  height: 48,
-                                  child: LiquidGlass(
-                                    radius: 24,
-                                    child: IconButton(
-                                      tooltip: '일정 추가',
-                                      onPressed: () => _openCreate(
-                                        _view == ViewMode.month
-                                            ? date_utils.parseDateKey(
-                                                _selectedKey,
-                                              )
-                                            : _anchorDate,
-                                      ),
-                                      icon: Icon(
-                                        Icons.add,
+                                child:
+                                    !kIsWeb &&
+                                        defaultTargetPlatform ==
+                                            TargetPlatform.iOS
+                                    ? NativeGlassButtons(
                                         color: theme.text,
-                                        size: 26,
+                                        dark: theme.isDark,
+                                        itemWidth: 48,
+                                        height: 48,
+                                        iconSize: 26,
+                                        actions: [
+                                          NativeGlassAction(
+                                            icon: Icons.add,
+                                            label: '일정 추가',
+                                            symbol: 'plus',
+                                            onPressed: () => _openCreate(
+                                              _view == ViewMode.month
+                                                  ? date_utils.parseDateKey(
+                                                      _selectedKey,
+                                                    )
+                                                  : _anchorDate,
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : SizedBox(
+                                        width: 48,
+                                        height: 48,
+                                        child: LiquidGlass(
+                                          radius: 24,
+                                          child: IconButton(
+                                            style:
+                                                !kIsWeb &&
+                                                    defaultTargetPlatform ==
+                                                        TargetPlatform.iOS
+                                                ? IconButton.styleFrom(
+                                                    splashFactory:
+                                                        NoSplash.splashFactory,
+                                                    overlayColor:
+                                                        Colors.transparent,
+                                                  )
+                                                : null,
+                                            tooltip: '일정 추가',
+                                            onPressed: () => _openCreate(
+                                              _view == ViewMode.month
+                                                  ? date_utils.parseDateKey(
+                                                      _selectedKey,
+                                                    )
+                                                  : _anchorDate,
+                                            ),
+                                            icon: Icon(
+                                              Icons.add,
+                                              color: theme.text,
+                                              size: 26,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                  ),
-                                ),
                               ),
                             ],
                           ),
@@ -2924,120 +2959,138 @@ class _AccountDrawer extends StatelessWidget {
         ? user!.name
         : user?.email.split('@').first;
     return Drawer(
-      elevation: 32,
-      backgroundColor: theme.bg,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: ListView(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          child: LiquidGlass(
+            radius: 28,
+            // Keep Flutter dialogs and routes above the drawer's glass.
+            useNative: false,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: ListView(
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          name == null || name.isEmpty ? '사용자' : name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: theme.text,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.7,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name == null || name.isEmpty ? '사용자' : name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: theme.text,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.7,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              email,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: theme.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: '캘린더 관리',
+                        onPressed: onManageCalendars,
+                        icon: Icon(
+                          Icons.calendar_month_outlined,
+                          color: CupertinoColors.activeBlue.resolveFrom(
+                            context,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          email,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: theme.textMuted,
-                            fontSize: 12,
-                          ),
+                      ),
+                      IconButton(
+                        tooltip: '설정',
+                        onPressed: onSettings,
+                        icon: Icon(
+                          Icons.settings_outlined,
+                          color: theme.textSecondary,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: '캘린더 관리',
-                    onPressed: onManageCalendars,
-                    icon: Icon(
-                      Icons.calendar_month_outlined,
-                      color: CupertinoColors.activeBlue.resolveFrom(context),
+                  const SizedBox(height: 16),
+                  Divider(color: theme.border, height: 1),
+                  const SizedBox(height: 20),
+                  _sectionTitle('내 캘린더'),
+                  const SizedBox(height: 6),
+                  personalCalendars,
+                  if (imports.sources.isNotEmpty) ...[
+                    for (final entry in imports.sources.entries.where(
+                      (entry) => entry.key != 'kbo',
+                    ))
+                      ImportedCalendarGroup(
+                        theme: theme,
+                        imports: imports,
+                        provider: entry.key,
+                      ),
+                  ],
+                  const SizedBox(height: 28),
+                  _sectionTitle('구독'),
+                  const SizedBox(height: 10),
+                  if (imports.sources.containsKey('kbo'))
+                    ImportedCalendarGroup(
+                      theme: theme,
+                      imports: imports,
+                      provider: 'kbo',
                     ),
-                  ),
-                  IconButton(
-                    tooltip: '설정',
-                    onPressed: onSettings,
-                    icon: Icon(
-                      Icons.settings_outlined,
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.add,
+                      size: 20,
                       color: theme.textSecondary,
                     ),
+                    title: const Text(
+                      '구독 추가하기',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    onTap: onAddSubscription,
+                  ),
+                  const SizedBox(height: 28),
+                  _sectionTitle('기능 표시'),
+                  const SizedBox(height: 10),
+                  _displayCheckbox(
+                    label: '법정 기념일',
+                    value: showAnniversaries,
+                    onChanged: onAnniversariesChanged,
+                    subscription: true,
+                  ),
+                  _displayCheckbox(
+                    label: '공휴일',
+                    value: showHolidays,
+                    onChanged: onHolidaysChanged,
+                  ),
+                  _displayCheckbox(
+                    label: '음력',
+                    value: showLunar,
+                    onChanged: onLunarChanged,
+                  ),
+                  _displayCheckbox(
+                    label: '절기',
+                    value: showSolarTerms,
+                    onChanged: onSolarTermsChanged,
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Divider(color: theme.border, height: 1),
-              const SizedBox(height: 20),
-              _sectionTitle('내 캘린더'),
-              const SizedBox(height: 6),
-              personalCalendars,
-              if (imports.sources.isNotEmpty) ...[
-                for (final entry in imports.sources.entries.where(
-                  (entry) => entry.key != 'kbo',
-                ))
-                  ImportedCalendarGroup(
-                    theme: theme,
-                    imports: imports,
-                    provider: entry.key,
-                  ),
-              ],
-              const SizedBox(height: 28),
-              _sectionTitle('구독'),
-              const SizedBox(height: 10),
-              if (imports.sources.containsKey('kbo'))
-                ImportedCalendarGroup(
-                  theme: theme,
-                  imports: imports,
-                  provider: 'kbo',
-                ),
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.add, size: 20, color: theme.textSecondary),
-                title: const Text('구독 추가하기', style: TextStyle(fontSize: 13)),
-                onTap: onAddSubscription,
-              ),
-              const SizedBox(height: 28),
-              _sectionTitle('기능 표시'),
-              const SizedBox(height: 10),
-              _displayCheckbox(
-                label: '법정 기념일',
-                value: showAnniversaries,
-                onChanged: onAnniversariesChanged,
-                subscription: true,
-              ),
-              _displayCheckbox(
-                label: '공휴일',
-                value: showHolidays,
-                onChanged: onHolidaysChanged,
-              ),
-              _displayCheckbox(
-                label: '음력',
-                value: showLunar,
-                onChanged: onLunarChanged,
-              ),
-              _displayCheckbox(
-                label: '절기',
-                value: showSolarTerms,
-                onChanged: onSolarTermsChanged,
-              ),
-            ],
+            ),
           ),
         ),
       ),
