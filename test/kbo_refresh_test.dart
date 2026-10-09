@@ -34,6 +34,34 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test(
+    'KBO visibility updates listeners before settings finish saving',
+    () async {
+      final imports = ImportedEvents(
+        fetchKboSchedule: (_, _) async => [game('game', '2026-10-09')],
+      );
+      addTearDown(imports.dispose);
+      await imports.load();
+      await imports.refresh('kbo', calendars, from, to);
+      final visibleCounts = <int>[];
+      imports.addListener(() {
+        visibleCounts.add(imports.events['2026-10-09']?.length ?? 0);
+      });
+
+      final hide = imports.setVisible('kbo', 'LG', false);
+      expect(visibleCounts, [0]);
+      expect(imports.isVisible('kbo', 'LG'), isFalse);
+      final show = imports.setVisible('kbo', 'LG', true);
+      expect(visibleCounts, [0, 1]);
+      expect(imports.isVisible('kbo', 'LG'), isTrue);
+      await Future.wait([hide, show]);
+      final saved = await AccountPreferences.instance.get(
+        'calendar.import.visibility.v1',
+      ) as String;
+      expect(jsonDecode(saved)['kbo|LG'], isTrue);
+    },
+  );
+
+  test(
     'resume reload keeps games visible while settings and schedule load',
     () async {
       final response = Completer<List<KboGame>>();

@@ -202,11 +202,12 @@ class ImportedEvents extends ChangeNotifier {
     bool visible,
   ) async {
     _visibility['$provider|$calendarId'] = visible;
+    // Reflect the tap before local persistence and remote synchronization.
+    notifyListeners();
     await AccountPreferences.instance.set(
       _visibilityKey,
       jsonEncode(_visibility),
     );
-    notifyListeners();
   }
 
   void replace(EventMap events) {
