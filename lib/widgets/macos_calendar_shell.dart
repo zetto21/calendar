@@ -342,24 +342,22 @@ class MacosCalendarShell extends StatelessWidget {
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  account,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: theme.textMuted, fontSize: 11),
+                ),
+              ),
+            ),
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 8,
-                    ),
-                    child: Text(
-                      account,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: theme.textMuted, fontSize: 11),
-                    ),
-                  ),
-                  ..._displayControls(),
-                ],
+                children: _displayControls(),
               ),
             ),
             Padding(
@@ -638,25 +636,34 @@ class MacosCalendarShell extends StatelessWidget {
                                 ),
                               ),
                               if (sidebar) ...[_views(), const Spacer()],
-                              _icon(
-                                '이전',
-                                CupertinoIcons.chevron_left,
-                                onPrevious,
-                              ),
                               Visibility(
                                 visible: view != ViewMode.list,
                                 maintainSize: true,
                                 maintainState: true,
                                 maintainAnimation: true,
-                                child: TextButton(
-                                  onPressed: onToday,
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: theme.text,
-                                  ),
-                                  child: const Text('오늘'),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _icon(
+                                      '이전',
+                                      CupertinoIcons.chevron_left,
+                                      onPrevious,
+                                    ),
+                                    TextButton(
+                                      onPressed: onToday,
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: theme.text,
+                                      ),
+                                      child: const Text('오늘'),
+                                    ),
+                                    _icon(
+                                      '다음',
+                                      CupertinoIcons.chevron_right,
+                                      onNext,
+                                    ),
+                                  ],
                                 ),
                               ),
-                              _icon('다음', CupertinoIcons.chevron_right, onNext),
                             ],
                           ),
                         ),

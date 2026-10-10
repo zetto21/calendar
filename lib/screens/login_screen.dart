@@ -11,6 +11,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../logic/security_urls.dart';
 import '../services/auth_service.dart';
+import '../services/apple_display_name.dart';
 import '../services/oauth_browser.dart';
 import '../theme/app_theme.dart';
 import '../widgets/brand_marks.dart';
@@ -142,14 +143,11 @@ class _LoginScreenState extends State<LoginScreen>
     if (identityToken == null) {
       throw AuthException('Apple 인증 정보를 받지 못했습니다.');
     }
-    // Apple only shares the name on the very first authorization. Korean
-    // names read family-first without a space ("홍길동"), others "John Smith".
-    final family = credential.familyName?.trim() ?? '';
-    final given = credential.givenName?.trim() ?? '';
-    final korean = RegExp(r'[가-힣]').hasMatch(family + given);
-    final name = korean
-        ? '$family$given'
-        : [given, family].where((part) => part.isNotEmpty).join(' ');
+    final name = await AppleDisplayName.resolve(
+      userIdentifier: credential.userIdentifier,
+      familyName: credential.familyName,
+      givenName: credential.givenName,
+    );
     return AuthService.instance.signInWithAppleNative(
       identityToken: identityToken,
       nonce: rawNonce,

@@ -12,12 +12,14 @@ class EventListView extends StatefulWidget {
   final AppTheme theme;
   final EventMap events;
   final ValueChanged<CalendarEvent> onEventPress;
+  final bool showPastEvents;
 
   const EventListView({
     super.key,
     required this.theme,
     required this.events,
     required this.onEventPress,
+    this.showPastEvents = false,
   });
 
   @override
@@ -54,7 +56,9 @@ class _EventListViewState extends State<EventListView>
     final events = {
       for (final entry in widget.events.entries)
         entry.key: entry.value
-            .where((event) => isUpcomingEvent(event, now))
+            .where(
+              (event) => widget.showPastEvents || isUpcomingEvent(event, now),
+            )
             .toList(),
     };
     final keys = events.keys.where((key) => events[key]!.isNotEmpty).toList()
