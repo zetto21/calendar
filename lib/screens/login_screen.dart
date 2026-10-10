@@ -1,5 +1,3 @@
-import '../widgets/login_failure_dialog.dart';
-
 import 'dart:convert' show base64Url, utf8;
 import 'dart:math' show Random;
 
@@ -53,7 +51,6 @@ class _LoginScreenState extends State<LoginScreen>
   bool _emailFormVisible = false;
   bool _busy = false;
   String _message = '';
-  bool _loginAlertVisible = false;
   bool _checkingConnection = false;
 
   List<SocialProvider> _enabledProviders = [];
@@ -110,17 +107,9 @@ class _LoginScreenState extends State<LoginScreen>
 
   bool get _isAuthenticating => _busy || _socialBusy != null;
 
-  Future<void> _showLoginFailure(String message) async {
-    if (!mounted || _loginAlertVisible) return;
-    _loginAlertVisible = true;
-    try {
-      await showCupertinoDialog<void>(
-        context: context,
-        builder: (dialogContext) => LoginFailureDialog(message: message),
-      );
-    } finally {
-      _loginAlertVisible = false;
-    }
+  void _showLoginFailure(String message) {
+    if (!mounted) return;
+    setState(() => _message = message);
   }
 
   /// iOS and macOS use the system Sign in with Apple sheet instead of a

@@ -2794,6 +2794,7 @@ class _CalendarHomeState extends State<CalendarHome>
           days: _visibleWeekDays,
           events: expanded,
           anniversaryNames: _showAnniversaries ? _apiAnniversaries : const {},
+          holidayNames: _showHolidays ? _apiHolidays : const {},
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onEventPress: _openEdit,
@@ -2818,6 +2819,7 @@ class _CalendarHomeState extends State<CalendarHome>
           days: [_anchorDate],
           events: expanded,
           anniversaryNames: _showAnniversaries ? _apiAnniversaries : const {},
+          holidayNames: _showHolidays ? _apiHolidays : const {},
           onSlotPress: (date, hour) =>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onEventPress: _openEdit,
@@ -3261,28 +3263,6 @@ class _CalendarConnectionsSheet extends StatelessWidget {
             '날짜 속성이 있는 데이터베이스 선택',
           ),
         ]),
-        if (imports.sources.isNotEmpty) ...[
-          const SizedBox(height: 22),
-          Text(
-            '연동된 캘린더',
-            style: TextStyle(
-              color: theme.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 9),
-          AnimatedBuilder(
-            animation: imports,
-            builder: (context, _) => Column(
-              children: [
-                for (final entry in imports.sources.entries)
-                  for (final calendar in entry.value)
-                    _connectedCalendarRow(context, entry.key, calendar),
-              ],
-            ),
-          ),
-        ],
       ],
     );
     if (useDesktopLayout) {
@@ -3418,77 +3398,6 @@ class _CalendarConnectionsSheet extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  Widget _connectedCalendarRow(
-    BuildContext context,
-    String provider,
-    ImportCalendar calendar,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.bgSecondary,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: colorFromHex(calendar.color),
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Text(
-              calendar.title,
-              style: TextStyle(color: theme.text, fontSize: 14),
-            ),
-          ),
-          CupertinoButton(
-            padding: const EdgeInsets.all(6),
-            minimumSize: const Size(32, 32),
-            onPressed: () => _confirmDisconnect(context, provider, calendar),
-            child: const Icon(
-              CupertinoIcons.trash,
-              color: CupertinoColors.systemRed,
-              size: 19,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _confirmDisconnect(
-    BuildContext context,
-    String provider,
-    ImportCalendar calendar,
-  ) async {
-    final remove = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AppDialog(
-        title: const Text('연동 해제'),
-        content: Text('${calendar.title} 캘린더 연동을 해제할까요?'),
-        actions: [
-          AppDialogAction(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          AppDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('해제'),
-          ),
-        ],
-      ),
-    );
-    if (remove == true) await onDisconnect(provider, calendar);
   }
 }
 

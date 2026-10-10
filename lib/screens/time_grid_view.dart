@@ -24,6 +24,7 @@ class TimeGridView extends StatefulWidget {
   final List<DateTime> days;
   final EventMap events;
   final Map<String, List<String>> anniversaryNames;
+  final Map<String, String> holidayNames;
   final void Function(DateTime date, int hour) onSlotPress;
   final ValueChanged<CalendarEvent> onEventPress;
   final void Function(CalendarEvent event, DateTime date, String? time)?
@@ -45,6 +46,7 @@ class TimeGridView extends StatefulWidget {
     required this.days,
     required this.events,
     this.anniversaryNames = const {},
+    this.holidayNames = const {},
     required this.onSlotPress,
     required this.onEventPress,
     this.onEventMove,
@@ -235,6 +237,15 @@ class _TimeGridViewState extends State<TimeGridView>
     _outgoingScroll?.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Color _dateColor(DateTime date, TimeGridView view) {
+    if (date.weekday == DateTime.sunday ||
+        view.holidayNames.containsKey(date_utils.toDateKey(date))) {
+      return const Color(0xFFFF526F);
+    }
+    if (date.weekday == DateTime.saturday) return const Color(0xFF3B82F6);
+    return view.theme.text;
   }
 
   Widget _draggableAllDay(CalendarEvent e, TimeGridView view) {
@@ -502,7 +513,7 @@ class _TimeGridViewState extends State<TimeGridView>
                         date_utils.weekdays[d.weekday % 7],
                         style: TextStyle(
                           fontSize: 11,
-                          color: view.theme.textMuted,
+                          color: _dateColor(d, view),
                         ),
                       ),
                       const SizedBox(width: 3),
@@ -514,7 +525,7 @@ class _TimeGridViewState extends State<TimeGridView>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(4),
                           color: date_utils.isSameDay(d, _now)
-                              ? view.theme.danger
+                              ? const Color(0xFF3B82F6)
                               : null,
                         ),
                         child: Text(
@@ -523,7 +534,7 @@ class _TimeGridViewState extends State<TimeGridView>
                             fontSize: 12,
                             color: date_utils.isSameDay(d, _now)
                                 ? Colors.white
-                                : view.theme.text,
+                                : _dateColor(d, view),
                           ),
                         ),
                       ),
@@ -983,7 +994,7 @@ class _DayColumnState extends State<_DayColumn> {
                 top: (nowMinutes / 60) * _hourHeight,
                 left: 0,
                 right: 0,
-                child: Container(height: 1.5, color: theme.danger),
+                child: Container(height: 1.5, color: const Color(0xFF3B82F6)),
               ),
           ],
         ),

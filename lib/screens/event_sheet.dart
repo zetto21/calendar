@@ -2,6 +2,7 @@ import '../widgets/app_dialog.dart';
 import '../widgets/event_time_picker.dart';
 import '../widgets/calendar_date_picker.dart';
 import '../widgets/calendar_time_picker.dart';
+import '../widgets/glass_delete_dialog.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -401,21 +402,23 @@ class _EventSheetState extends State<EventSheet> {
   Future<void> _confirmDelete() async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
-      builder: (dialogContext) => AppDialog(
-        title: const Text('일정 삭제'),
-        content: const Text('이 일정을 삭제하시겠어요?'),
-        actions: [
-          AppDialogAction(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('취소'),
-          ),
-          AppDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) => _macGlass
+          ? const GlassDeleteDialog()
+          : AppDialog(
+              title: const Text('일정 삭제'),
+              content: const Text('이 일정을 삭제하시겠어요?'),
+              actions: [
+                AppDialogAction(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('취소'),
+                ),
+                AppDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('삭제'),
+                ),
+              ],
+            ),
     );
     if (confirmed != true) return;
     await widget.onDelete?.call();

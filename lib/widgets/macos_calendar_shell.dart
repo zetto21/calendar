@@ -567,8 +567,7 @@ class MacosCalendarShell extends StatelessWidget {
             final monthAgenda =
                 view == ViewMode.month &&
                 constraints.maxWidth - (sidebar ? 248 : 0) >= 760;
-            final showCreate =
-                view != ViewMode.week && view != ViewMode.day && !monthAgenda;
+            final showCreate = view == ViewMode.month && !monthAgenda;
             return ColoredBox(
               color: theme.bg,
               child: Row(
@@ -644,14 +643,19 @@ class MacosCalendarShell extends StatelessWidget {
                                 CupertinoIcons.chevron_left,
                                 onPrevious,
                               ),
-                              if (view != ViewMode.list)
-                                TextButton(
+                              Visibility(
+                                visible: view != ViewMode.list,
+                                maintainSize: true,
+                                maintainState: true,
+                                maintainAnimation: true,
+                                child: TextButton(
                                   onPressed: onToday,
                                   style: TextButton.styleFrom(
                                     foregroundColor: theme.text,
                                   ),
                                   child: const Text('오늘'),
                                 ),
+                              ),
                               _icon('다음', CupertinoIcons.chevron_right, onNext),
                             ],
                           ),
