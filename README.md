@@ -90,6 +90,20 @@ keyPassword=YOUR_KEY_PASSWORD
 
 ## 보안 변경 검증
 
+공개 저장소에는 환경변수 파일, 인증서·서명 키, 계정 비밀번호, 개인 일정 백업을 커밋하지 않습니다. `.gitignore`는 이 파일들을 로컬에 보존하면서 추적에서 제외합니다. 이미 추적 중인 파일은 `git rm --cached -- 파일경로`로 제외해야 합니다.
+
+이 컴퓨터에는 커밋·푸시 검사 훅을 설치했습니다. 다른 컴퓨터에서 복제한 뒤에는 다음 명령으로 설치하세요. Python 3와 인터넷 연결이 필요하며, 고정된 Gitleaks 버전의 공식 배포 파일을 체크섬으로 확인합니다.
+
+```sh
+python3 tool/git_security.py --install
+python3 tool/git_security.py --staged
+python3 tool/git_security.py --history
+```
+
+검사는 민감 파일과 비밀값을 발견하면 커밋·푸시를 중단합니다. 비밀값은 출력에서 숨깁니다. 민감 파일명 검사는 현재 스냅샷과 최초 검토 이후 추가한 Git 이력을 확인하며, 비밀값 검사는 전체 이력을 확인합니다. GitHub Actions도 푸시·PR에서 검사합니다. 훅은 로컬 검사이므로 새 복제본에도 설치해야 합니다.
+
+이미 공개한 실제 인증정보는 파일을 삭제해도 유효할 수 있으므로 발급처에서 폐기·재발급하고, 필요하면 Git 이력도 정리해야 합니다. `.gitleaksignore`에는 확인한 특정 커밋의 공개 패키지 체크섬·설정 키 오탐만 예외로 기록합니다.
+
 ```sh
 dart analyze
 flutter test --no-pub

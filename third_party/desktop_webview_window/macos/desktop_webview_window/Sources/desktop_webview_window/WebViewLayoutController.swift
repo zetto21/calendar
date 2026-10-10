@@ -127,7 +127,6 @@ class WebViewLayoutController: NSViewController {
   }
 
   func load(url: URL) {
-    debugPrint("load url: \(url)")
     webView.load(URLRequest(url: url))
   }
 

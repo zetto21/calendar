@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+exec python3 tool/git_security.py --history

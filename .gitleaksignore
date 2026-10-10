@@ -1,0 +1,6 @@
+# Reviewed false positives, limited to these exact historical findings:
+# CocoaPods package checksums (not authentication keys).
+a948f037c9851723afb4012b19990072a9ffcb0e:macos/Podfile.lock:generic-api-key:29
+517c86c4b44c2815f6955ddfba72981a74e8b4cb:ios/Podfile.lock:generic-api-key:24
+# Public SharedPreferences consent key, not a credential.
+517c86c4b44c2815f6955ddfba72981a74e8b4cb:lib/screens/consent_screen.dart:generic-api-key:9

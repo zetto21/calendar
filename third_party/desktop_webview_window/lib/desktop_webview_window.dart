@@ -36,16 +36,18 @@ class WebviewWindow {
     _channel.setMethodCallHandler((call) async {
       try {
         return await _handleMethodCall(call);
-      } catch (e, s) {
-        debugPrint("method: ${call.method} args: ${call.arguments}");
-        debugPrint('handleMethodCall error: $e $s');
+      } catch (e) {
+        // Payloads and exception messages can contain OAuth URLs or cookies.
+        debugPrint('WebView method ${call.method} failed (${e.runtimeType})');
       }
     });
     _otherIsolateMessageHandler.setMessageHandler((call) async {
       try {
         return await _handleOtherIsolateMethodCall(call);
-      } catch (e, s) {
-        debugPrint('_handleOtherIsolateMethodCall error: $e $s');
+      } catch (e) {
+        debugPrint(
+          'WebView title bar method ${call.method} failed (${e.runtimeType})',
+        );
       }
     });
   }
@@ -189,7 +191,7 @@ class WebviewWindow {
             await webview2Dir.delete(recursive: true);
             break;
           } catch (e) {
-            debugPrint("delete cache failed. retring.... $e");
+            debugPrint('WebView cache deletion failed (${e.runtimeType})');
           }
           // wait to ensure all web window has been closed and file handle has been release.
           await Future.delayed(const Duration(seconds: 1));
