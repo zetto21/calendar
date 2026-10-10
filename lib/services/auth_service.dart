@@ -100,6 +100,9 @@ class AuthUser {
       allowEmpty: true,
     ),
   );
+
+  AuthUser withName(String value) =>
+      AuthUser(id: id, email: email, name: value, createdAt: createdAt);
 }
 
 String _checkedString(
@@ -462,7 +465,7 @@ class AuthService {
     final token = _sessionToken;
     if (token == null) return null;
     try {
-      final user = await _request(
+      var user = await _request(
         '/api/auth/me',
         (json) => json == null
             ? null
@@ -474,6 +477,10 @@ class AuthService {
       if (user == null) {
         await _clearSession();
       } else {
+        final saved = _sessionUser;
+        if (user.name.trim().isEmpty && saved?.id == user.id) {
+          user = user.withName(saved!.name);
+        }
         await _saveSession(token, user, generation);
       }
       return user;
@@ -589,8 +596,37 @@ class AuthService {
         if (name != null && name.isNotEmpty) 'name': name,
       },
     );
-    await _saveSession(result.token, result.user, generation);
-    return result.user;
+    // Older servers may return an empty display name for existing Apple users.
+    // Preserve the name Apple supplied instead of discarding it in that case.
+    final receivedName = name?.trim() ?? '';
+    final user = result.user.name.trim().isEmpty && receivedName.isNotEmpty
+        ? result.user.withName(receivedName)
+        : result.user;
+    await _saveSession(result.token, user, generation);
+    return user;
+  }
+
+  Future<AuthUser> updateDisplayName(String name) async {
+    final value = name.trim();
+    if (value.isEmpty ||
+        value.runes.length > 40 ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(value)) {
+      throw AuthException('이름은 1~40자로 입력해 주세요.');
+    }
+    final current = _sessionUser;
+    if (current == null) throw AuthException('로그인이 필요합니다.');
+    final token = _accountToken(current.id);
+    final generation = _sessionGeneration;
+    final user = await _request(
+      '/api/auth/profile',
+      (json) => AuthUser.fromJson(json!['user'] as Map<String, dynamic>),
+      method: 'PATCH',
+      token: token,
+      body: {'name': value},
+    );
+    if (user.id != current.id) throw AuthException('계정 정보를 확인하지 못했습니다.');
+    await _saveSession(token, user, generation);
+    return user;
   }
 
   Future<AuthUser> exchangeSocialCode(

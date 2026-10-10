@@ -1,5 +1,6 @@
 import 'logic/calendar_event_range.dart';
 import 'widgets/app_dialog.dart';
+import 'widgets/display_name_dialog.dart';
 import 'services/desktop_notifications.dart';
 import 'services/windows_event_reminders.dart';
 import 'screens/windows_reminder_settings.dart';
@@ -327,6 +328,9 @@ class _AuthGateState extends State<AuthGate> {
       deviceZone: widget.deviceZone,
       user: _user,
       onLogout: _logout,
+      onUserChanged: (user) {
+        if (mounted && _user?.id == user.id) setState(() => _user = user);
+      },
     );
   }
 }
@@ -335,11 +339,13 @@ class CalendarHome extends StatefulWidget {
   final tz.Location deviceZone;
   final AuthUser? user;
   final VoidCallback onLogout;
+  final ValueChanged<AuthUser>? onUserChanged;
   const CalendarHome({
     super.key,
     required this.deviceZone,
     required this.user,
     required this.onLogout,
+    this.onUserChanged,
   });
 
   @override
@@ -2311,12 +2317,30 @@ class _CalendarHomeState extends State<CalendarHome>
     unawaited(AccountPreferences.instance.set(_onboardingKey, true));
   }
 
+  Future<void> _editDisplayName() async {
+    final user = widget.user;
+    if (user == null) return;
+    await showDisplayNameDialog(
+      context,
+      initialName: user.name,
+      onSave: (name) async {
+        if (!mounted || widget.user?.id != user.id) {
+          throw AuthException('계정이 변경되었습니다. 다시 시도해 주세요.');
+        }
+        final updated = await AuthService.instance.updateDisplayName(name);
+        if (mounted && widget.user?.id == updated.id)
+          widget.onUserChanged?.call(updated);
+      },
+    );
+  }
+
   void _openSettings() {
     final settings = SettingsScreen(
       theme: Theme.of(context).brightness == Brightness.dark
           ? darkTheme
           : lightTheme,
       accountLabel: widget.user?.email ?? '게스트',
+      onEditDisplayName: widget.user == null ? null : _editDisplayName,
       onCalendarConnections: _showCalendarConnections,
       onEventReminders: WindowsEventReminders.supported
           ? () => showWindowsReminderSettings(

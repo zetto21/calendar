@@ -21,6 +21,7 @@ class SettingsScreen extends StatelessWidget {
   final AppTheme theme;
   final String accountLabel;
   final VoidCallback onLogout;
+  final VoidCallback? onEditDisplayName;
   final VoidCallback? onLiveActivities;
   final VoidCallback? onCalendarConnections;
   final VoidCallback? onEventReminders;
@@ -33,6 +34,7 @@ class SettingsScreen extends StatelessWidget {
     required this.theme,
     required this.accountLabel,
     required this.onLogout,
+    this.onEditDisplayName,
     this.onLiveActivities,
     this.onCalendarConnections,
     this.onEventReminders,
@@ -109,6 +111,16 @@ class SettingsScreen extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (onEditDisplayName != null)
+                    CupertinoListTile.notched(
+                      leading: _icon(
+                        CupertinoIcons.person,
+                        CupertinoColors.systemBlue,
+                      ),
+                      title: const Text('이름 · 별명'),
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: onEditDisplayName,
+                    ),
                   CupertinoListTile.notched(
                     leading: _icon(
                       CupertinoIcons.square_arrow_right,
@@ -301,6 +313,13 @@ class SettingsScreen extends StatelessWidget {
             title: '로그인 계정',
             value: accountLabel,
           ),
+          if (onEditDisplayName != null)
+            _MacRow(
+              icon: CupertinoIcons.person,
+              color: CupertinoColors.systemBlue,
+              title: '이름 · 별명',
+              onTap: onEditDisplayName,
+            ),
           _MacRow(
             icon: CupertinoIcons.square_arrow_right,
             color: CupertinoColors.systemRed,
@@ -506,6 +525,12 @@ class SettingsScreen extends StatelessWidget {
                       '로그인 계정',
                       subtitle: accountLabel,
                     ),
+                    if (onEditDisplayName != null)
+                      tile(
+                        Icons.person_outline,
+                        '이름 · 별명',
+                        onTap: onEditDisplayName,
+                      ),
                     const Divider(height: 1, indent: 60),
                     tile(
                       Icons.logout,
