@@ -1,11 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../logic/date_utils.dart' as date_utils;
 import '../models/calendar_event.dart';
+import '../logic/upcoming_events.dart';
 import '../theme/app_theme.dart';
 
-/// Port of components/ListView.tsx: a flat, date-grouped agenda of every event.
-class EventListView extends StatelessWidget {
+/// A date-grouped agenda of ongoing and upcoming events.
+class EventListView extends StatefulWidget {
   final AppTheme theme;
   final EventMap events;
   final ValueChanged<CalendarEvent> onEventPress;
@@ -18,7 +21,42 @@ class EventListView extends StatelessWidget {
   });
 
   @override
+  State<EventListView> createState() => _EventListViewState();
+}
+
+class _EventListViewState extends State<EventListView>
+    with WidgetsBindingObserver {
+  late final Timer _timer;
+  AppTheme get theme => widget.theme;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) => setState(() {}));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final events = {
+      for (final entry in widget.events.entries)
+        entry.key: entry.value
+            .where((event) => isUpcomingEvent(event, now))
+            .toList(),
+    };
     final keys = events.keys.where((key) => events[key]!.isNotEmpty).toList()
       ..sort();
     if (keys.isEmpty) {
@@ -26,7 +64,7 @@ class EventListView extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            '일정이 없습니다',
+            '다가오는 일정이 없습니다',
             textAlign: TextAlign.center,
             style: TextStyle(color: theme.textMuted, fontSize: 13),
           ),
@@ -47,7 +85,7 @@ class EventListView extends StatelessWidget {
                 .minutesFromTime(a.time!)
                 .compareTo(date_utils.minutesFromTime(b.time!));
           });
-        final isToday = date_utils.toDateKey(DateTime.now()) == key;
+        final isToday = date_utils.toDateKey(now) == key;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -107,7 +145,7 @@ class EventListView extends StatelessWidget {
                 date: date,
                 showDate: false,
                 event: dayEvents[eventIndex],
-                onTap: () => onEventPress(dayEvents[eventIndex]),
+                onTap: () => widget.onEventPress(dayEvents[eventIndex]),
               ),
           ],
         );

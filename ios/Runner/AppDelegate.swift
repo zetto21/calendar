@@ -10,6 +10,7 @@ import CoreText
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    WatchCalendarSync.shared.activate()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -30,6 +31,7 @@ import CoreText
           result(FlutterError(code: "invalid_snapshot", message: "위젯 데이터를 확인해 주세요.", details: nil)); return
         }
         defaults.set(snapshot, forKey: "calendarWidgetSnapshot")
+        WatchCalendarSync.shared.update(snapshot)
         WidgetCenter.shared.reloadTimelines(ofKind: "CalendarHomeWidget")
         result(nil)
       }

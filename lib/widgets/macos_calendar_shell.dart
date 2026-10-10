@@ -581,47 +581,43 @@ class MacosCalendarShell extends StatelessWidget {
                       children: [
                         Padding(
                           padding: const EdgeInsets.all(8),
-                          child: LiquidGlass(
-                            useNative: false,
-                            radius: 24,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              child: Row(
-                                children: [
-                                  if (!sidebar)
-                                    _icon(
-                                      '캘린더 표시',
-                                      CupertinoIcons.sidebar_left,
-                                      () => _showCalendars(context),
-                                    ),
-                                  const Spacer(),
-                                  _views(),
-                                  if (!sidebar) ...[
-                                    const SizedBox(width: 6),
-                                    _icon(
-                                      '일정 추가 · ${desktopShortcutLabel}N',
-                                      CupertinoIcons.add,
-                                      onCreate,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _icon(
-                                      '일정 검색 · ${desktopShortcutLabel}F',
-                                      CupertinoIcons.search,
-                                      onSearch,
-                                    ),
-                                  ],
-                                  const Spacer(),
-                                  if (!sidebar)
-                                    _icon(
-                                      '설정',
-                                      CupertinoIcons.gear,
-                                      onSettings ?? onManage,
-                                    ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              children: [
+                                if (!sidebar)
+                                  _icon(
+                                    '캘린더 표시',
+                                    CupertinoIcons.sidebar_left,
+                                    () => _showCalendars(context),
+                                  ),
+                                const Spacer(),
+                                _views(),
+                                if (!sidebar) ...[
+                                  const SizedBox(width: 6),
+                                  _icon(
+                                    '일정 추가 · ${desktopShortcutLabel}N',
+                                    CupertinoIcons.add,
+                                    onCreate,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _icon(
+                                    '일정 검색 · ${desktopShortcutLabel}F',
+                                    CupertinoIcons.search,
+                                    onSearch,
+                                  ),
                                 ],
-                              ),
+                                const Spacer(),
+                                if (!sidebar)
+                                  _icon(
+                                    '설정',
+                                    CupertinoIcons.gear,
+                                    onSettings ?? onManage,
+                                  ),
+                              ],
                             ),
                           ),
                         ),
