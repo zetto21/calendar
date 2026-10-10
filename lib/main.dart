@@ -1,3 +1,4 @@
+import 'logic/calendar_event_range.dart';
 import 'widgets/app_dialog.dart';
 import 'services/desktop_notifications.dart';
 import 'services/windows_event_reminders.dart';
@@ -425,6 +426,8 @@ class _CalendarHomeState extends State<CalendarHome>
       _view = view;
       _rollingWeekStart = null;
     });
+    unawaited(_runSync());
+    unawaited(_refreshImported());
   }
 
   void _shiftVisibleDays(int days) {
@@ -1163,15 +1166,8 @@ class _CalendarHomeState extends State<CalendarHome>
     }
   }
 
-  (String, String) get _range {
-    final from = date_utils.toDateKey(
-      DateTime(_anchorDate.year, _anchorDate.month - 1, 24),
-    );
-    final to = date_utils.toDateKey(
-      DateTime(_anchorDate.year, _anchorDate.month + 1, 7),
-    );
-    return (from, to);
-  }
+  (String, String) get _range =>
+      calendarEventRange(_view, _anchorDate, DateTime.now());
 
   Future<void> _runSync() async {
     await _eventStore.sync();
