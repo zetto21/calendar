@@ -402,7 +402,27 @@ class _MonthAgendaState extends State<MonthAgenda> {
                                   },
                                 ),
                         ),
-                        const SizedBox(height: 16),
+                        if (widget.onCreateDate != null)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 20, 20),
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: LiquidGlass(
+                                useNative: false,
+                                radius: 24,
+                                child: IconButton(
+                                  onPressed: () => widget.onCreateDate!(day),
+                                  style: IconButton.styleFrom(
+                                    fixedSize: const Size(48, 48),
+                                    foregroundColor: theme.text,
+                                  ),
+                                  icon: const Icon(Icons.add, size: 26),
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox(height: 16),
                       ],
                     ),
               ),

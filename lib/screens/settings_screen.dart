@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart'
 import '../services/backup_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/liquid_glass.dart';
+import '../widgets/keyboard_shortcuts_dialog.dart';
 import '../platform.dart';
 import '../screens/windows_widgets.dart';
 
@@ -378,6 +379,20 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS)
+        _MacSection(
+          '키보드',
+          CupertinoIcons.keyboard,
+          CupertinoColors.systemGrey,
+          [
+            _MacRow(
+              icon: CupertinoIcons.keyboard,
+              color: CupertinoColors.systemGrey,
+              title: '키보드 단축키 보기',
+              onTap: () => showKeyboardShortcuts(context),
+            ),
+          ],
+        ),
       _MacSection('안내', CupertinoIcons.bell_fill, CupertinoColors.systemRed, [
         info(
           '공시사항',

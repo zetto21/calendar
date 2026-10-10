@@ -9,6 +9,7 @@ class MainFlutterWindow: NSWindow {
   private var windowChannel: FlutterMethodChannel?
   private var menuChannel: FlutterMethodChannel?
   private var calendarMenu: NSMenu?
+  private var calendarMenuItem: NSMenuItem?
   private var calendarFrame: NSRect?
   private var currentScreen = "login"
   private var fullscreenObserver: NSObjectProtocol?
@@ -27,6 +28,8 @@ class MainFlutterWindow: NSWindow {
     let calendarMenuItem = NSMenuItem(title: "캘린더", action: nil, keyEquivalent: "")
     let menu = NSMenu(title: "캘린더")
     calendarMenuItem.submenu = menu
+    calendarMenuItem.isHidden = true
+    self.calendarMenuItem = calendarMenuItem
     calendarMenu = menu
     NSApp.mainMenu?.insertItem(calendarMenuItem, at: min(1, NSApp.mainMenu?.items.count ?? 0))
 
@@ -212,7 +215,7 @@ class MainFlutterWindow: NSWindow {
   }
 
   private func updateCalendarMenu(_ items: [[String: Any]]) {
-    guard let menu = calendarMenu else { return }
+    guard currentScreen == "calendar", let menu = calendarMenu else { return }
     menu.removeAllItems()
     for data in items {
       guard let id = data["id"] as? String,
@@ -227,6 +230,12 @@ class MainFlutterWindow: NSWindow {
       let item = NSMenuItem(title: title, action: #selector(toggleCalendarVisibility(_:)), keyEquivalent: "")
       item.target = self
       item.representedObject = id
+      if let hex = data["color"] as? String, let color = calendarMenuColor(hex) {
+        let label = NSMutableAttributedString(string: "●  " + title,
+          attributes: [.font: NSFont.menuFont(ofSize: 0)])
+        label.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: 1))
+        item.attributedTitle = label
+      }
       item.state = (data["visible"] as? Bool ?? true) ? .on : .off
       menu.addItem(item)
     }
@@ -237,8 +246,18 @@ class MainFlutterWindow: NSWindow {
     }
   }
 
+  private func calendarMenuColor(_ hex: String) -> NSColor? {
+    var digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+    if digits.count == 3 { digits = digits.map { "\($0)\($0)" }.joined() }
+    guard digits.count == 6, let rgb = UInt32(digits, radix: 16) else { return nil }
+    return NSColor(srgbRed: CGFloat((rgb >> 16) & 0xff) / 255,
+                   green: CGFloat((rgb >> 8) & 0xff) / 255,
+                   blue: CGFloat(rgb & 0xff) / 255, alpha: 1)
+  }
+
   @objc private func toggleCalendarVisibility(_ sender: NSMenuItem) {
-    guard let id = sender.representedObject as? String else { return }
+    guard currentScreen == "calendar",
+          let id = sender.representedObject as? String else { return }
     sender.state = sender.state == .on ? .off : .on
     menuChannel?.invokeMethod("toggleCalendarVisibility", arguments: [
       "id": id,
@@ -259,6 +278,8 @@ class MainFlutterWindow: NSWindow {
       calendarFrame = frame
     }
     currentScreen = screen
+    calendarMenuItem?.isHidden = screen != "calendar"
+    if screen != "calendar" { calendarMenu?.removeAllItems() }
     if styleMask.contains(.fullScreen) {
       if fullscreenObserver == nil {
         fullscreenObserver = NotificationCenter.default.addObserver(
@@ -280,6 +301,8 @@ class MainFlutterWindow: NSWindow {
 
   private func applyScreen(_ screen: String, animated: Bool) {
     let calendar = screen == "calendar"
+    calendarMenuItem?.isHidden = !calendar
+    if !calendar { calendarMenu?.removeAllItems() }
     let visible = self.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
       ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     // Release the login constraints before restoring the calendar frame.

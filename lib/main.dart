@@ -198,6 +198,7 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _acceptUser(AuthUser? user) async {
     final generation = ++_authGeneration;
+    if (user == null) await MacosWindow.showCalendar(false);
     await CalendarHomeWidget.clear();
     await WindowsEventReminders.clear();
     if (!mounted || generation != _authGeneration) return;
@@ -564,24 +565,56 @@ class _CalendarHomeState extends State<CalendarHome>
         'title': _personalCalendars
             .firstWhere((calendar) => calendar.id == 'personal')
             .title,
+        'color': _personalCalendars
+            .firstWhere((calendar) => calendar.id == 'personal')
+            .color,
         'visible': _showPersonalCalendar,
       },
-      for (final source in imported.sources.entries)
+      for (final source in imported.sources.entries.where(
+        (source) => source.key != 'kbo',
+      ))
         for (final calendar in source.value)
           {
             'id': 'import:${source.key}|${calendar.id}',
             'title': '${_calendarProviderName(source.key)} · ${calendar.title}',
+            'color': calendar.color,
             'visible': imported.isVisible(source.key, calendar.id),
           },
+      if (imported.sources['kbo']?.isNotEmpty == true) ...[
+        {'id': 'section:subscriptions', 'title': '구독', 'header': true},
+        for (final calendar in imported.sources['kbo']!)
+          {
+            'id': 'import:kbo|${calendar.id}',
+            'title': 'KBO 야구 · ${calendar.title}',
+            'color': calendar.color,
+            'visible': imported.isVisible('kbo', calendar.id),
+          },
+      ],
       {'id': 'section:features', 'title': '기능 표시', 'header': true},
       {
         'id': 'setting:anniversaries',
         'title': '법정 기념일',
+        'color': '#707078',
         'visible': _showAnniversaries,
       },
-      {'id': 'setting:holidays', 'title': '공휴일', 'visible': _showHolidays},
-      {'id': 'setting:lunar', 'title': '음력', 'visible': _showLunar},
-      {'id': 'setting:solarTerms', 'title': '절기', 'visible': _showSolarTerms},
+      {
+        'id': 'setting:holidays',
+        'title': '공휴일',
+        'color': '#FF526F',
+        'visible': _showHolidays,
+      },
+      {
+        'id': 'setting:lunar',
+        'title': '음력',
+        'color': '#929297',
+        'visible': _showLunar,
+      },
+      {
+        'id': 'setting:solarTerms',
+        'title': '절기',
+        'color': '#929297',
+        'visible': _showSolarTerms,
+      },
     ];
     final signature = items.toString();
     if (_lastMacCalendarMenuSignature == signature) return;
@@ -2468,7 +2501,7 @@ class _CalendarHomeState extends State<CalendarHome>
                   CheckboxListTile(
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
-                    activeColor: theme.textMuted,
+                    activeColor: const Color(0xFFFF526F),
                     title: const Text('공휴일', style: TextStyle(fontSize: 13)),
                     value: _showHolidays,
                     onChanged: (value) => _setDisplaySetting(

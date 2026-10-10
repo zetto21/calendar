@@ -288,7 +288,7 @@ class MacosCalendarShell extends StatelessWidget {
     );
   }
 
-  Widget _sidebar() {
+  Widget _sidebar({bool showCreate = true}) {
     final date = selectedDate ?? DateTime.now();
     final cells = dates.getMonthMatrix(date.year, date.month - 1);
     // Always include the next month's first week, even in six-row months.
@@ -334,8 +334,10 @@ class MacosCalendarShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _icon('일정 추가', CupertinoIcons.add, onCreate),
-                  const SizedBox(width: 8),
+                  if (showCreate) ...[
+                    _icon('일정 추가', CupertinoIcons.add, onCreate),
+                    const SizedBox(width: 8),
+                  ],
                   _icon('일정 검색', CupertinoIcons.search, onSearch),
                 ],
               ),
@@ -562,52 +564,63 @@ class MacosCalendarShell extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final sidebar = constraints.maxWidth >= 1000;
+            final monthAgenda =
+                view == ViewMode.month &&
+                constraints.maxWidth - (sidebar ? 248 : 0) >= 760;
+            final showCreate =
+                view != ViewMode.week && view != ViewMode.day && !monthAgenda;
             return ColoredBox(
               color: theme.bg,
               child: Row(
                 children: [
-                  if (sidebar) _sidebar(),
+                  if (sidebar) _sidebar(showCreate: showCreate),
                   Expanded(
                     child: Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            child: Row(
-                              children: [
-                                if (!sidebar)
-                                  _icon(
-                                    '캘린더 표시',
-                                    CupertinoIcons.sidebar_left,
-                                    () => _showCalendars(context),
-                                  ),
-                                const Spacer(),
-                                _views(),
-                                if (!sidebar) ...[
-                                  const SizedBox(width: 6),
-                                  _icon('일정 추가', CupertinoIcons.add, onCreate),
-                                  const SizedBox(width: 8),
-                                  _icon(
-                                    '일정 검색',
-                                    CupertinoIcons.search,
-                                    onSearch,
-                                  ),
+                        if (!sidebar)
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              child: Row(
+                                children: [
+                                  if (!sidebar)
+                                    _icon(
+                                      '캘린더 표시',
+                                      CupertinoIcons.sidebar_left,
+                                      () => _showCalendars(context),
+                                    ),
+                                  const Spacer(),
+                                  _views(),
+                                  if (!sidebar) ...[
+                                    const SizedBox(width: 6),
+                                    if (showCreate)
+                                      _icon(
+                                        '일정 추가',
+                                        CupertinoIcons.add,
+                                        onCreate,
+                                      ),
+                                    const SizedBox(width: 8),
+                                    _icon(
+                                      '일정 검색',
+                                      CupertinoIcons.search,
+                                      onSearch,
+                                    ),
+                                  ],
+                                  const Spacer(),
+                                  if (!sidebar)
+                                    _icon(
+                                      '설정',
+                                      CupertinoIcons.gear,
+                                      onSettings ?? onManage,
+                                    ),
                                 ],
-                                const Spacer(),
-                                if (!sidebar)
-                                  _icon(
-                                    '설정',
-                                    CupertinoIcons.gear,
-                                    onSettings ?? onManage,
-                                  ),
-                              ],
+                              ),
                             ),
                           ),
-                        ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
                           child: Row(
@@ -625,6 +638,7 @@ class MacosCalendarShell extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                              if (sidebar) ...[_views(), const Spacer()],
                               _icon(
                                 '이전',
                                 CupertinoIcons.chevron_left,
