@@ -18,6 +18,11 @@ class MainFlutterWindow: NSWindow {
     contentViewController = flutterViewController
     RegisterGeneratedPlugins(registry: flutterViewController)
     super.awakeFromNib()
+    titleVisibility = .hidden
+    titlebarAppearsTransparent = true
+    styleMask.insert(.fullSizeContentView)
+    toolbar = nil
+    titlebarSeparatorStyle = .none
 
     let calendarMenuItem = NSMenuItem(title: "캘린더", action: nil, keyEquivalent: "")
     let menu = NSMenu(title: "캘린더")

@@ -34,6 +34,11 @@ class MonthAgenda extends StatefulWidget {
   final ValueChanged<VoidCallback>? onCollapseReady;
   final void Function(CalendarEvent event, DateTime date)? onEventMove;
   final ValueChanged<CalendarEvent?>? onEventHover;
+  final void Function(CalendarEvent event, DateTime date, String? time)?
+  onTimedEventMove;
+  final void Function(CalendarEvent event, String time, int duration)?
+  onEventResize;
+  final void Function(DateTime date, String time, int duration)? onRangeCreate;
   const MonthAgenda({
     super.key,
     this.sidePanel,
@@ -55,6 +60,9 @@ class MonthAgenda extends StatefulWidget {
     this.onCollapseReady,
     this.onEventMove,
     this.onEventHover,
+    this.onTimedEventMove,
+    this.onEventResize,
+    this.onRangeCreate,
   });
 
   @override
@@ -337,6 +345,11 @@ class _MonthAgendaState extends State<MonthAgenda> {
                                     widget.selectedKey: events,
                                   },
                                   onSlotPress: widget.onSlotPress,
+                                  onEventMove: widget.onTimedEventMove,
+                                  onEventResize: widget.onEventResize,
+                                  onRangeCreate: widget.onRangeCreate,
+                                  onEventHover: widget.onEventHover,
+                                  selectedDate: day,
                                   onEventPress: (event) {
                                     if (!anniversaries.contains(event)) {
                                       widget.onEventPress(event);
@@ -584,6 +597,11 @@ class _MonthAgendaState extends State<MonthAgenda> {
                                       widget.selectedKey: events,
                                     },
                                     onSlotPress: widget.onSlotPress,
+                                    onEventMove: widget.onTimedEventMove,
+                                    onEventResize: widget.onEventResize,
+                                    onRangeCreate: widget.onRangeCreate,
+                                    onEventHover: widget.onEventHover,
+                                    selectedDate: day,
                                     onEventPress: (event) {
                                       if (!anniversaries.contains(event)) {
                                         widget.onEventPress(event);

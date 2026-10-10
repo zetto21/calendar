@@ -127,7 +127,18 @@ class CalendarApp extends StatelessWidget {
         return MediaQuery(
           data: MediaQuery.of(context)
               .copyWith(textScaler: const TextScaler.linear(_desktopTextScale)),
-          child: child!,
+          child: TooltipVisibility(
+            visible: defaultTargetPlatform != TargetPlatform.macOS,
+            child: defaultTargetPlatform == TargetPlatform.macOS
+                ? ColoredBox(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 28),
+                      child: child!,
+                    ),
+                  )
+                : child!,
+          ),
         );
       },
       // First-run consent precedes login, session restoration and API probes.
@@ -2719,6 +2730,15 @@ class _CalendarHomeState extends State<CalendarHome>
               _openCreate(date, '${hour.toString().padLeft(2, '0')}:00'),
           onCollapseReady: (collapse) => _collapseAgenda = collapse,
           onEventMove: _moveEvent,
+          onTimedEventMove: (event, date, time) =>
+              _moveEvent(event, date, time: time),
+          onEventResize: (event, time, duration) => _moveEvent(
+            event,
+            date_utils.parseDateKey(event.date),
+            time: time,
+            duration: duration,
+          ),
+          onRangeCreate: _createRange,
           onEventHover: _onEventHover,
           onCreateDate: (date) {
             _selectDay(date);

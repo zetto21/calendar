@@ -1,5 +1,7 @@
 import '../widgets/app_dialog.dart';
 import '../widgets/event_time_picker.dart';
+import '../widgets/calendar_date_picker.dart';
+import '../widgets/calendar_time_picker.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -114,9 +116,7 @@ class _EventSheetState extends State<EventSheet> {
       }
       return;
     }
-    final picked = await showDatePicker(
-      builder: (context, child) =>
-          Theme(data: AppDialogStyle.theme(context), child: child!),
+    final picked = await showCalendarDatePicker(
       context: context,
       initialDate: _date,
       firstDate: DateTime(2000),
@@ -136,9 +136,7 @@ class _EventSheetState extends State<EventSheet> {
       }
       return;
     }
-    final picked = await showTimePicker(
-      builder: (context, child) =>
-          Theme(data: AppDialogStyle.theme(context), child: child!),
+    final picked = await showCalendarTimePicker(
       context: context,
       initialTime: _startTime,
     );
@@ -182,8 +180,6 @@ class _EventSheetState extends State<EventSheet> {
       }
       return;
     }
-    await _pickDate();
-    if (!mounted) return;
     await _pickStartTime();
   }
 
@@ -201,9 +197,7 @@ class _EventSheetState extends State<EventSheet> {
       _setEndTime(TimeOfDay.fromDateTime(picked));
       return;
     }
-    final picked = await showTimePicker(
-      builder: (context, child) =>
-          Theme(data: AppDialogStyle.theme(context), child: child!),
+    final picked = await showCalendarTimePicker(
       context: context,
       initialTime: _endTime,
     );
@@ -334,11 +328,7 @@ class _EventSheetState extends State<EventSheet> {
                     style: TextStyle(color: theme.text),
                   ),
                   onTap: () async {
-                    final picked = await showDatePicker(
-                      builder: (context, child) => Theme(
-                        data: AppDialogStyle.theme(context),
-                        child: child!,
-                      ),
+                    final picked = await showCalendarDatePicker(
                       context: sheetContext,
                       initialDate: tempUntil ?? _date,
                       firstDate: _date,
@@ -633,19 +623,24 @@ class _EventSheetState extends State<EventSheet> {
   }
 
   bool get _desktop => useDesktopLayout;
+  bool get _macGlass =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
+  Widget _glassAction(Widget child) =>
+      LiquidGlass(useNative: false, radius: 20, child: child);
 
   Widget _chip(String label, VoidCallback onTap, {bool strong = false}) {
     final theme = widget.theme;
-    return Material(
+    final chip = Material(
       type: MaterialType.transparency,
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(_macGlass ? 18 : 6),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
           decoration: BoxDecoration(
-            color: theme.bgSecondary,
-            borderRadius: BorderRadius.circular(6),
+            color: _macGlass ? Colors.transparent : theme.bgSecondary,
+            borderRadius: BorderRadius.circular(_macGlass ? 18 : 6),
           ),
           child: Text(
             label,
@@ -658,6 +653,7 @@ class _EventSheetState extends State<EventSheet> {
         ),
       ),
     );
+    return _macGlass ? _glassAction(chip) : chip;
   }
 
   Widget _desktopRow(IconData icon, Widget child, {bool top = false}) =>
@@ -701,190 +697,231 @@ class _EventSheetState extends State<EventSheet> {
 
   Widget _buildSidebar(BuildContext context) {
     final theme = widget.theme;
-    return ColoredBox(
-      color: AppDialogStyle.background(context),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_macGlass)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.isEditing ? '일정 편집' : '일정 추가',
+                    style: TextStyle(
+                      color: theme.text,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                _glassAction(
+                  IconButton(
+                    tooltip: '닫기',
+                    onPressed: _close,
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
           AppDialogHeader(
             title: Text(widget.isEditing ? '일정 편집' : '일정 추가'),
             onClose: _close,
           ),
-          Divider(height: 1, color: theme.border),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: AppDialogStyle.bodyPadding,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextField(
-                    controller: _titleController,
-                    autofocus: !widget.isEditing,
-                    minLines: 1,
-                    maxLines: 3,
-                    style: TextStyle(color: theme.text, fontSize: 14),
-                    decoration: const InputDecoration(hintText: '일정 제목'),
+        Divider(height: 1, color: theme.border),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: AppDialogStyle.bodyPadding,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _titleController,
+                  autofocus: !widget.isEditing,
+                  minLines: 1,
+                  maxLines: 3,
+                  style: TextStyle(color: theme.text, fontSize: 14),
+                  decoration: const InputDecoration(hintText: '일정 제목'),
+                ),
+                const SizedBox(height: 16),
+                _desktopRow(
+                  CupertinoIcons.calendar,
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 8,
+                    children: [
+                      _chip(_shortDateLabel(_date), _pickDate, strong: true),
+                      _chip(
+                        _isAllDay ? '종일 ✓' : '종일',
+                        () => setState(() => _isAllDay = !_isAllDay),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
+                ),
+                if (!_isAllDay) ...[
                   _desktopRow(
-                    CupertinoIcons.calendar,
+                    CupertinoIcons.time,
                     Wrap(
                       spacing: 6,
                       runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        _chip(_shortDateLabel(_date), _pickDate, strong: true),
-                        _chip(
-                          _isAllDay ? '종일 ✓' : '종일',
-                          () => setState(() => _isAllDay = !_isAllDay),
+                        _chip(_startTime.format(context), _pickStartDateTime),
+                        Icon(
+                          CupertinoIcons.arrow_right,
+                          size: 12,
+                          color: theme.textMuted,
                         ),
+                        _chip(_endTime.format(context), _pickEndTime),
                       ],
                     ),
                   ),
-                  if (!_isAllDay) ...[
-                    _desktopRow(
-                      CupertinoIcons.time,
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 8,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          _chip(_startTime.format(context), _pickStartDateTime),
-                          Icon(
-                            CupertinoIcons.arrow_right,
-                            size: 12,
-                            color: theme.textMuted,
-                          ),
-                          _chip(_endTime.format(context), _pickEndTime),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        left: 28,
-                        top: 2,
-                        bottom: 8,
-                      ),
-                      child: Text(
-                        date_utils.formatDurationLabel(_durationMinutes),
-                        style: TextStyle(color: theme.textMuted, fontSize: 12),
-                      ),
-                    ),
-                  ],
-                  _desktopRow(
-                    CupertinoIcons.repeat,
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: _chip(
-                        _frequency == null
-                            ? '반복 안 함'
-                            : _frequencyLabel(_frequency!),
-                        _pickRepeat,
-                      ),
-                    ),
-                  ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Divider(height: 1, color: theme.border),
+                    padding: const EdgeInsets.only(left: 28, top: 2, bottom: 8),
+                    child: Text(
+                      date_utils.formatDurationLabel(_durationMinutes),
+                      style: TextStyle(color: theme.textMuted, fontSize: 12),
+                    ),
                   ),
-                  _desktopField(
-                    CupertinoIcons.location,
-                    _locationController,
-                    '장소 추가',
+                ],
+                _desktopRow(
+                  CupertinoIcons.repeat,
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _chip(
+                      _frequency == null
+                          ? '반복 안 함'
+                          : _frequencyLabel(_frequency!),
+                      _pickRepeat,
+                    ),
                   ),
-                  _desktopField(
-                    CupertinoIcons.link,
-                    _urlController,
-                    'URL 추가',
-                    keyboardType: TextInputType.url,
-                  ),
-                  _desktopField(
-                    CupertinoIcons.text_alignleft,
-                    _descriptionController,
-                    '설명 추가',
-                    maxLines: 5,
-                  ),
-                  const SizedBox(height: 12),
-                  _desktopRow(
-                    CupertinoIcons.paintbrush,
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      children: [
-                        for (final entry in [
-                          ...palette.skip(6).take(6),
-                          ...palette.take(6),
-                        ])
-                          Tooltip(
-                            message: entry.name,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () => setState(
-                                () => _color = colorToHex(entry.value),
-                              ),
-                              child: SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: Center(
-                                  child: Container(
-                                    width: 18,
-                                    height: 18,
-                                    decoration: BoxDecoration(
-                                      color: entry.value,
-                                      shape: BoxShape.circle,
-                                      border:
-                                          _color.toUpperCase() ==
-                                              colorToHex(entry.value)
-                                          ? Border.all(
-                                              color: theme.text,
-                                              width: 2,
-                                            )
-                                          : null,
-                                    ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1, color: theme.border),
+                ),
+                _desktopField(
+                  CupertinoIcons.location,
+                  _locationController,
+                  '장소 추가',
+                ),
+                _desktopField(
+                  CupertinoIcons.link,
+                  _urlController,
+                  'URL 추가',
+                  keyboardType: TextInputType.url,
+                ),
+                _desktopField(
+                  CupertinoIcons.text_alignleft,
+                  _descriptionController,
+                  '설명 추가',
+                  maxLines: 5,
+                ),
+                const SizedBox(height: 12),
+                _desktopRow(
+                  CupertinoIcons.paintbrush,
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      for (final entry in [
+                        ...palette.skip(6).take(6),
+                        ...palette.take(6),
+                      ])
+                        Tooltip(
+                          message: entry.name,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => setState(
+                              () => _color = colorToHex(entry.value),
+                            ),
+                            child: SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: Center(
+                                child: Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    color: entry.value,
+                                    shape: BoxShape.circle,
+                                    border:
+                                        _color.toUpperCase() ==
+                                            colorToHex(entry.value)
+                                        ? Border.all(
+                                            color: theme.text,
+                                            width: 2,
+                                          )
+                                        : null,
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          Divider(height: 1, color: theme.border),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              child: Row(
-                children: [
-                  if (widget.isEditing && widget.onDelete != null)
-                    IconButton(
-                      tooltip: '삭제',
-                      onPressed: _confirmDelete,
-                      icon: const Icon(
-                        CupertinoIcons.trash,
-                        size: 18,
-                        color: CupertinoColors.destructiveRed,
+        ),
+        Divider(height: 1, color: theme.border),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Row(
+              children: [
+                if (widget.isEditing && widget.onDelete != null)
+                  IconButton(
+                    tooltip: '삭제',
+                    onPressed: _confirmDelete,
+                    icon: const Icon(
+                      CupertinoIcons.trash,
+                      size: 18,
+                      color: CupertinoColors.destructiveRed,
+                    ),
+                  ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _close,
+                  child: Text(
+                    '취소',
+                    style: TextStyle(color: theme.textSecondary),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_macGlass)
+                  _glassAction(
+                    TextButton(
+                      onPressed: _save,
+                      style: TextButton.styleFrom(
+                        foregroundColor: theme.text,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w700),
                       ),
+                      child: const Text('저장'),
                     ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: _close,
-                    child: Text(
-                      '취소',
-                      style: TextStyle(color: theme.textSecondary),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(onPressed: _save, child: const Text('저장  ⌘↵')),
-                ],
-              ),
+                  )
+                else
+                  FilledButton(onPressed: _save, child: const Text('저장')),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
+    );
+    if (!_macGlass) {
+      return ColoredBox(
+        color: AppDialogStyle.background(context),
+        child: content,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: LiquidGlass(useNative: false, radius: 24, child: content),
     );
   }
 
@@ -1006,7 +1043,7 @@ class _EventSheetState extends State<EventSheet> {
             style: TextButton.styleFrom(foregroundColor: theme.danger),
           ),
         TextButton(onPressed: _close, child: const Text('취소')),
-        FilledButton(onPressed: _save, child: const Text('저장  ⌘↵')),
+        FilledButton(onPressed: _save, child: const Text('저장')),
       ],
     );
   }
@@ -1032,7 +1069,31 @@ class _EventSheetState extends State<EventSheet> {
   Widget build(BuildContext context) {
     if (_desktop) {
       return Theme(
-        data: AppDialogStyle.theme(context),
+        data: _macGlass && widget.embedded
+            ? AppDialogStyle.theme(context).copyWith(
+                inputDecorationTheme: AppDialogStyle.theme(context)
+                    .inputDecorationTheme
+                    .copyWith(
+                      fillColor: widget.theme.text.withValues(alpha: .04),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: widget.theme.text.withValues(alpha: .10),
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: widget.theme.text.withValues(alpha: .10),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: widget.theme.accent),
+                      ),
+                    ),
+              )
+            : AppDialogStyle.theme(context),
         child: Material(
           type: MaterialType.transparency,
           child: widget.embedded

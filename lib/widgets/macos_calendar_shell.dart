@@ -179,8 +179,7 @@ class MacosCalendarShell extends StatelessWidget {
             Semantics(
               selected: view == mode,
               child: Tooltip(
-                message:
-                    '${labels[mode]!} · $desktopShortcutLabel${labels.keys.toList().indexOf(mode) + 1}',
+                message: labels[mode]!,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(14),
                   onTap: () => onViewChanged(mode),
@@ -335,17 +334,9 @@ class MacosCalendarShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  _icon(
-                    '일정 추가 · ${desktopShortcutLabel}N',
-                    CupertinoIcons.add,
-                    onCreate,
-                  ),
+                  _icon('일정 추가', CupertinoIcons.add, onCreate),
                   const SizedBox(width: 8),
-                  _icon(
-                    '일정 검색 · ${desktopShortcutLabel}F',
-                    CupertinoIcons.search,
-                    onSearch,
-                  ),
+                  _icon('일정 검색', CupertinoIcons.search, onSearch),
                 ],
               ),
             ),
@@ -598,14 +589,10 @@ class MacosCalendarShell extends StatelessWidget {
                                 _views(),
                                 if (!sidebar) ...[
                                   const SizedBox(width: 6),
-                                  _icon(
-                                    '일정 추가 · ${desktopShortcutLabel}N',
-                                    CupertinoIcons.add,
-                                    onCreate,
-                                  ),
+                                  _icon('일정 추가', CupertinoIcons.add, onCreate),
                                   const SizedBox(width: 8),
                                   _icon(
-                                    '일정 검색 · ${desktopShortcutLabel}F',
+                                    '일정 검색',
                                     CupertinoIcons.search,
                                     onSearch,
                                   ),
@@ -639,7 +626,7 @@ class MacosCalendarShell extends StatelessWidget {
                                 ),
                               ),
                               _icon(
-                                '이전 · $desktopShortcutLabel←',
+                                '이전',
                                 CupertinoIcons.chevron_left,
                                 onPrevious,
                               ),
@@ -651,11 +638,7 @@ class MacosCalendarShell extends StatelessWidget {
                                   ),
                                   child: const Text('오늘'),
                                 ),
-                              _icon(
-                                '다음 · $desktopShortcutLabel→',
-                                CupertinoIcons.chevron_right,
-                                onNext,
-                              ),
+                              _icon('다음', CupertinoIcons.chevron_right, onNext),
                             ],
                           ),
                         ),
